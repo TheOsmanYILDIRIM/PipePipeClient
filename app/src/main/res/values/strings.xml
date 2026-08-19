@@ -1091,6 +1091,8 @@
     <string name="gemini_api_key">Gemini API Key</string>
     <string name="gemini_api_key_summary">Enter your Google Gemini API key to enable live subtitle translation</string>
     <string name="gemini_model">AI Model</string>
+    <string name="gemini_rpm_title">Request Rate Limit (RPM)</string>
+    <string name="gemini_rpm_summary">Maximum API requests allowed per minute (Default: 15 RPM for Gemini Free Tier)</string>
     <string name="gemini_chunk_size">Chunk Size</string>
     <string name="gemini_chunk_size_summary">Number of subtitle blocks translated per batch (Default: 50)</string>
     <string name="select_source_subtitles">Select source subtitle track:</string>

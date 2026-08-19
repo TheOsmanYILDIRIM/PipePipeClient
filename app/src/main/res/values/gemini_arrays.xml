@@ -15,4 +15,22 @@
         <item>gemini-1.5-flash</item>
         <item>gemini-1.5-pro</item>
     </string-array>
+
+    <string-array name="gemini_rpm_entries">
+        <item>15 RPM (Gemini Free Tier - Recommended)</item>
+        <item>10 RPM (Conservative / Low Quota)</item>
+        <item>5 RPM (Safe &amp; Steady)</item>
+        <item>30 RPM (Paid Tier 1)</item>
+        <item>60 RPM (Paid Tier 2+ / Ultra Fast)</item>
+        <item>No Limit (Fastest / 0ms delay)</item>
+    </string-array>
+
+    <string-array name="gemini_rpm_values">
+        <item>15</item>
+        <item>10</item>
+        <item>5</item>
+        <item>30</item>
+        <item>60</item>
+        <item>0</item>
+    </string-array>
 </resources>

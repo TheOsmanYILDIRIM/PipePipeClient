@@ -25,6 +25,15 @@
             android:defaultValue="gemini-3.5-flash-lite"
             app:iconSpaceReserved="false" />
 
+        <ListPreference
+            android:key="gemini_rpm_limit"
+            android:title="@string/gemini_rpm_title"
+            android:summary="%s"
+            android:entries="@array/gemini_rpm_entries"
+            android:entryValues="@array/gemini_rpm_values"
+            android:defaultValue="15"
+            app:iconSpaceReserved="false" />
+
         <EditTextPreference
             android:key="gemini_chunk_size"
             android:title="@string/gemini_chunk_size"

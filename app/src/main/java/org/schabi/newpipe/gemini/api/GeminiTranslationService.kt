@@ -14,16 +14,42 @@ import kotlin.math.pow
 
 class GeminiTranslationService(private val context: Context) {
 
+    companion object {
+        private val lock = Any()
+        private var lastRequestTimestamp = 0L
+    }
+
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
 
+    private fun throttleRpm(rpm: Int) {
+        if (rpm <= 0) return
+        val minIntervalMs = 60_000L / rpm.toLong()
+
+        synchronized(lock) {
+            val now = System.currentTimeMillis()
+            val elapsed = now - lastRequestTimestamp
+            if (elapsed in 0 until minIntervalMs) {
+                val sleepTime = minIntervalMs - elapsed
+                try {
+                    Thread.sleep(sleepTime)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                }
+            }
+            lastRequestTimestamp = System.currentTimeMillis()
+        }
+    }
+
     fun translateChunk(chunkText: String, targetLanguage: String, maxRetries: Int = 3): String {
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
         val apiKey = prefs.getString("gemini_api_key", "")?.trim().orEmpty()
         val model = prefs.getString("gemini_model", "gemini-3.5-flash-lite")?.trim()?.ifEmpty { "gemini-3.5-flash-lite" } ?: "gemini-3.5-flash-lite"
+        val rpmStr = prefs.getString("gemini_rpm_limit", "15") ?: "15"
+        val rpm = rpmStr.toIntOrNull() ?: 15
 
         if (apiKey.isEmpty()) {
             throw IllegalStateException("Gemini API key is not configured. Please set it in Settings -> Gemini AI Translation.")
@@ -71,6 +97,8 @@ class GeminiTranslationService(private val context: Context) {
 
         for (attempt in 0..maxRetries) {
             try {
+                throttleRpm(rpm)
+
                 val request = Request.Builder()
                     .url(url)
                     .post(requestBody)
@@ -87,9 +115,8 @@ class GeminiTranslationService(private val context: Context) {
                         responseString
                     }
 
-                    // Retry on rate limit (429) or temporary server errors (5xx)
                     if ((response.code == 429 || response.code in 500..599) && attempt < maxRetries) {
-                        val backoffMs = (1500L * (2.0.pow(attempt.toDouble()))).toLong().coerceIn(1000L, 8000L)
+                        val backoffMs = (2000L * (2.0.pow(attempt.toDouble()))).toLong().coerceIn(2000L, 10000L)
                         Thread.sleep(backoffMs)
                         continue
                     }
@@ -108,7 +135,7 @@ class GeminiTranslationService(private val context: Context) {
             } catch (e: Exception) {
                 lastException = e
                 if (attempt < maxRetries) {
-                    val backoffMs = (1500L * (2.0.pow(attempt.toDouble()))).toLong().coerceIn(1000L, 8000L)
+                    val backoffMs = (2000L * (2.0.pow(attempt.toDouble()))).toLong().coerceIn(2000L, 10000L)
                     try { Thread.sleep(backoffMs) } catch (_: InterruptedException) { break }
                 }
             }
