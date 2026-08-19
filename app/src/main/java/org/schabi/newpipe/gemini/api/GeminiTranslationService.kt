@@ -16,10 +16,56 @@ import kotlin.math.pow
 class GeminiTranslationService(private val context: Context) {
 
     companion object {
-        private val lock = Any()
-        private var lastRequestTimestamp = 0L
-
         private val RETRY_DELAY_REGEX = Pattern.compile("retry\\s+in\\s+([0-9.]+)\\s*s", Pattern.CASE_INSENSITIVE)
+        private val rateLimiterLock = Any()
+        private val requestTimestamps = ArrayDeque<Long>()
+        private var lastDispatchTime = 0L
+
+        fun acquireRateLimit(rpm: Int, onWaiting: ((waitSeconds: Int) -> Unit)? = null) {
+            if (rpm <= 0) return
+
+            while (true) {
+                val waitTimeMs: Long
+                synchronized(rateLimiterLock) {
+                    val now = System.currentTimeMillis()
+                    val windowStart = now - 60_000L
+
+                    // Remove timestamps older than 60 seconds
+                    while (requestTimestamps.isNotEmpty() && requestTimestamps.first() <= windowStart) {
+                        requestTimestamps.removeFirst()
+                    }
+
+                    if (requestTimestamps.size < rpm) {
+                        // Small burst spacing (e.g. 200ms) between parallel dispatches
+                        val timeSinceLast = now - lastDispatchTime
+                        val spacing = 200L
+                        if (timeSinceLast < spacing) {
+                            waitTimeMs = spacing - timeSinceLast
+                        } else {
+                            requestTimestamps.addLast(now)
+                            lastDispatchTime = now
+                            return
+                        }
+                    } else {
+                        // Reached RPM limit! Wait until oldest request in 60s window drops out
+                        val oldest = requestTimestamps.first()
+                        waitTimeMs = (oldest + 60_000L - now).coerceAtLeast(500L)
+                    }
+                }
+
+                if (waitTimeMs > 1000L) {
+                    val waitSec = ((waitTimeMs + 999L) / 1000L).toInt().coerceAtLeast(1)
+                    onWaiting?.invoke(waitSec)
+                }
+
+                try {
+                    Thread.sleep(waitTimeMs)
+                } catch (e: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    throw e
+                }
+            }
+        }
     }
 
     private val httpClient = OkHttpClient.Builder()
@@ -28,25 +74,6 @@ class GeminiTranslationService(private val context: Context) {
         .writeTimeout(30, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         .build()
-
-    private fun throttleRpm(rpm: Int) {
-        if (rpm <= 0) return
-        val minIntervalMs = 60_000L / rpm.toLong()
-
-        synchronized(lock) {
-            val now = System.currentTimeMillis()
-            val elapsed = now - lastRequestTimestamp
-            if (elapsed in 0 until minIntervalMs) {
-                val sleepTime = minIntervalMs - elapsed
-                try {
-                    Thread.sleep(sleepTime)
-                } catch (_: InterruptedException) {
-                    Thread.currentThread().interrupt()
-                }
-            }
-            lastRequestTimestamp = System.currentTimeMillis()
-        }
-    }
 
     fun translateChunk(
         chunkText: String,
@@ -131,7 +158,7 @@ class GeminiTranslationService(private val context: Context) {
                     throw InterruptedException("Translation task was interrupted")
                 }
 
-                throttleRpm(rpm)
+                acquireRateLimit(rpm, onWaitingQuota)
 
                 val request = Request.Builder()
                     .url(url)

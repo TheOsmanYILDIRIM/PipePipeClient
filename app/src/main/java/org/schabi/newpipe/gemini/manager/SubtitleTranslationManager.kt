@@ -18,6 +18,8 @@ import java.io.IOException
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 class SubtitleTranslationManager(private val context: Context) {
 
@@ -28,7 +30,8 @@ class SubtitleTranslationManager(private val context: Context) {
         .followSslRedirects(true)
         .build()
 
-    private val executor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val coordinatorExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private var workerExecutor: ExecutorService? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private var currentTask: Future<*>? = null
 
@@ -58,11 +61,13 @@ class SubtitleTranslationManager(private val context: Context) {
     ) {
         cancel()
 
-        currentTask = executor.submit {
+        currentTask = coordinatorExecutor.submit {
             try {
                 val prefs = PreferenceManager.getDefaultSharedPreferences(context)
                 val chunkSize = prefs.getString("gemini_chunk_size", "50")
                     ?.toIntOrNull()?.coerceIn(10, 500) ?: 50
+                val concurrency = prefs.getString("gemini_concurrency", "3")
+                    ?.toIntOrNull()?.coerceIn(1, 10) ?: 3
                 val customModel = prefs.getString("gemini_custom_model", "")?.trim().orEmpty()
                 val listModel = prefs.getString("gemini_model", "gemini-3.5-flash-lite") ?: "gemini-3.5-flash-lite"
                 val modelName = if (customModel.isNotEmpty()) customModel else listModel
@@ -122,53 +127,73 @@ class SubtitleTranslationManager(private val context: Context) {
                     return@submit
                 }
 
-                for (chunkIdx in 0 until totalChunks) {
-                    if (Thread.currentThread().isInterrupted) return@submit
-                    if (translatedChunkBlocks[chunkIdx] != null) continue
+                val pool = Executors.newFixedThreadPool(concurrency)
+                workerExecutor = pool
 
-                    postState(TranslationState.Translating(chunkIdx + 1, totalChunks))
-                    GeminiNotificationHelper.showProgress(context, chunkIdx + 1, totalChunks)
-                    val chunkToTranslate = SubtitleParser.toSrt(chunks[chunkIdx])
+                val remainingIndices = (0 until totalChunks).filter { translatedChunkBlocks[it] == null }
+                val completedCount = AtomicInteger(cachedCount)
+                val chunk1ReadyReported = AtomicBoolean(cachedCount > 0)
+                val lock = Any()
 
-                    val translatedSrt = try {
-                        geminiService.translateChunk(
-                            chunkToTranslate,
-                            targetLanguage,
-                            maxRetries = 5
-                        ) { waitSeconds ->
-                            GeminiNotificationHelper.showQuotaWaiting(context, waitSeconds, chunkIdx + 1, totalChunks)
-                        }
-                    } catch (e: Exception) {
+                val futures = remainingIndices.map { chunkIdx ->
+                    pool.submit {
                         if (Thread.currentThread().isInterrupted) return@submit
-                        // Fallback to original chunk if permanent error occurs so translation doesn't halt
-                        chunkToTranslate
+
+                        val chunkToTranslate = SubtitleParser.toSrt(chunks[chunkIdx])
+
+                        val translatedSrt = try {
+                            geminiService.translateChunk(
+                                chunkToTranslate,
+                                targetLanguage,
+                                maxRetries = 5
+                            ) { waitSeconds ->
+                                GeminiNotificationHelper.showQuotaWaiting(context, waitSeconds, completedCount.get() + 1, totalChunks)
+                            }
+                        } catch (e: Exception) {
+                            if (Thread.currentThread().isInterrupted) return@submit
+                            chunkToTranslate
+                        }
+
+                        val parsedTranslated = SubtitleParser.parse(translatedSrt)
+                        val matchedBlocks = matchTranslatedBlocks(chunks[chunkIdx], parsedTranslated, translatedSrt)
+
+                        val currentDone: Int
+                        val currentCombined: List<SubtitleBlock>
+                        synchronized(lock) {
+                            translatedChunkBlocks[chunkIdx] = matchedBlocks
+
+                            dao.insertChunk(
+                                TranslatedSubtitle(
+                                    videoId = videoId,
+                                    sourceLanguage = sourceLang,
+                                    targetLanguage = targetLanguage,
+                                    chunkIndex = chunkIdx,
+                                    totalChunks = totalChunks,
+                                    originalSrtContent = chunkToTranslate,
+                                    translatedSrtContent = SubtitleParser.toSrt(matchedBlocks),
+                                    modelUsed = modelName
+                                )
+                            )
+
+                            currentCombined = buildCombinedBlocks(translatedChunkBlocks)
+                            currentDone = completedCount.incrementAndGet()
+                        }
+
+                        writeTempSrtFile(videoId, targetLanguage, SubtitleParser.toSrt(currentCombined))
+                        postBlocks(currentCombined)
+                        postState(TranslationState.Translating(currentDone, totalChunks))
+                        GeminiNotificationHelper.showProgress(context, currentDone, totalChunks)
+
+                        if (chunkIdx == 0 && chunk1ReadyReported.compareAndSet(false, true)) {
+                            GeminiNotificationHelper.showChunk1Ready(context)
+                        }
                     }
+                }
 
-                    val parsedTranslated = SubtitleParser.parse(translatedSrt)
-                    val matchedBlocks = matchTranslatedBlocks(chunks[chunkIdx], parsedTranslated, translatedSrt)
-
-                    translatedChunkBlocks[chunkIdx] = matchedBlocks
-
-                    dao.insertChunk(
-                        TranslatedSubtitle(
-                            videoId = videoId,
-                            sourceLanguage = sourceLang,
-                            targetLanguage = targetLanguage,
-                            chunkIndex = chunkIdx,
-                            totalChunks = totalChunks,
-                            originalSrtContent = chunkToTranslate,
-                            translatedSrtContent = SubtitleParser.toSrt(matchedBlocks),
-                            modelUsed = modelName
-                        )
-                    )
-
-                    val currentCombined = buildCombinedBlocks(translatedChunkBlocks)
-                    writeTempSrtFile(videoId, targetLanguage, SubtitleParser.toSrt(currentCombined))
-                    postBlocks(currentCombined)
-
-                    if (chunkIdx == 0 && cachedCount == 0) {
-                        GeminiNotificationHelper.showChunk1Ready(context)
-                    }
+                for (f in futures) {
+                    try {
+                        f.get()
+                    } catch (_: Exception) {}
                 }
 
                 val finalCombined = buildCombinedBlocks(translatedChunkBlocks)
@@ -182,11 +207,16 @@ class SubtitleTranslationManager(private val context: Context) {
                     postState(TranslationState.Error(errMsg))
                     GeminiNotificationHelper.showError(context, errMsg)
                 }
+            } finally {
+                workerExecutor?.shutdown()
+                workerExecutor = null
             }
         }
     }
 
     fun cancel() {
+        workerExecutor?.shutdownNow()
+        workerExecutor = null
         currentTask?.cancel(true)
         currentTask = null
         postState(TranslationState.Idle)

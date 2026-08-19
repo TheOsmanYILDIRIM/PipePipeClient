@@ -35,4 +35,20 @@
         <item>60</item>
         <item>0</item>
     </string-array>
+
+    <string-array name="gemini_concurrency_entries">
+        <item>1 Request (Sequential)</item>
+        <item>2 Parallel Requests</item>
+        <item>3 Parallel Requests (Recommended)</item>
+        <item>5 Parallel Requests (Fast)</item>
+        <item>8 Parallel Requests (Paid Tier)</item>
+    </string-array>
+
+    <string-array name="gemini_concurrency_values">
+        <item>1</item>
+        <item>2</item>
+        <item>3</item>
+        <item>5</item>
+        <item>8</item>
+    </string-array>
 </resources>

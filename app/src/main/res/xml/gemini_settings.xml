@@ -43,6 +43,15 @@
             android:defaultValue="15"
             app:iconSpaceReserved="false" />
 
+        <ListPreference
+            android:key="gemini_concurrency"
+            android:title="@string/gemini_concurrency_title"
+            android:summary="%s"
+            android:entries="@array/gemini_concurrency_entries"
+            android:entryValues="@array/gemini_concurrency_values"
+            android:defaultValue="3"
+            app:iconSpaceReserved="false" />
+
         <EditTextPreference
             android:key="gemini_chunk_size"
             android:title="@string/gemini_chunk_size"
