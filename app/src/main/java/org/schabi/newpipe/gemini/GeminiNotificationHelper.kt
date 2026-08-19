@@ -63,6 +63,20 @@ object GeminiNotificationHelper {
         getNotificationManager(context).notify(NOTIFICATION_ID, builder.build())
     }
 
+    fun showQuotaWaiting(context: Context, waitSeconds: Int, currentChunk: Int, totalChunks: Int) {
+        initChannel(context)
+        val text = "⏳ Kota sınırı (429): ${waitSeconds}s bekleniyor... ($currentChunk / $totalChunks)"
+        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_translate)
+            .setContentTitle("✨ Gemini Altyazı Çevirisi")
+            .setContentText(text)
+            .setProgress(totalChunks, currentChunk, false)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+
+        getNotificationManager(context).notify(NOTIFICATION_ID, builder.build())
+    }
+
     fun showChunk1Ready(context: Context) {
         Handler(Looper.getMainLooper()).post {
             Toast.makeText(context, "🎬 1. Chunk hazır! Altyazı oynamaya başladı.", Toast.LENGTH_SHORT).show()

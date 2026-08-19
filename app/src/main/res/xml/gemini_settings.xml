@@ -22,7 +22,7 @@
             android:summary="%s"
             android:entries="@array/gemini_models_entries"
             android:entryValues="@array/gemini_models_values"
-            android:defaultValue="gemini-3.5-flash-lite"
+            android:defaultValue="gemini-2.0-flash"
             app:iconSpaceReserved="false" />
 
         <ListPreference

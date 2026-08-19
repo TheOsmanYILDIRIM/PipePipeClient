@@ -10,6 +10,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import java.util.regex.Pattern
 import kotlin.math.pow
 
 class GeminiTranslationService(private val context: Context) {
@@ -17,12 +18,15 @@ class GeminiTranslationService(private val context: Context) {
     companion object {
         private val lock = Any()
         private var lastRequestTimestamp = 0L
+
+        private val RETRY_DELAY_REGEX = Pattern.compile("retry\\s+in\\s+([0-9.]+)\\s*s", Pattern.CASE_INSENSITIVE)
     }
 
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
         .build()
 
     private fun throttleRpm(rpm: Int) {
@@ -44,10 +48,21 @@ class GeminiTranslationService(private val context: Context) {
         }
     }
 
-    fun translateChunk(chunkText: String, targetLanguage: String, maxRetries: Int = 3): String {
+    fun translateChunk(
+        chunkText: String,
+        targetLanguage: String,
+        maxRetries: Int = 5,
+        onWaitingQuota: ((waitSeconds: Int) -> Unit)? = null
+    ): String {
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
         val apiKey = prefs.getString("gemini_api_key", "")?.trim().orEmpty()
-        val model = prefs.getString("gemini_model", "gemini-3.5-flash-lite")?.trim()?.ifEmpty { "gemini-3.5-flash-lite" } ?: "gemini-3.5-flash-lite"
+        var model = prefs.getString("gemini_model", "gemini-2.0-flash")?.trim()?.ifEmpty { "gemini-2.0-flash" } ?: "gemini-2.0-flash"
+
+        // Sanitize legacy or invalid model names
+        if (model.startsWith("gemini-3.") || model.startsWith("gemini-2.5-")) {
+            model = "gemini-2.0-flash"
+        }
+
         val rpmStr = prefs.getString("gemini_rpm_limit", "15") ?: "15"
         val rpm = rpmStr.toIntOrNull() ?: 15
 
@@ -88,6 +103,24 @@ class GeminiTranslationService(private val context: Context) {
                 put("temperature", 0.3)
             }
             put("generationConfig", genConfig)
+
+            // Disable safety filters to avoid blocking dialogue in movies / video subtitles
+            val safetyArray = JSONArray().apply {
+                val categories = listOf(
+                    "HARM_CATEGORY_HARASSMENT",
+                    "HARM_CATEGORY_HATE_SPEECH",
+                    "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                    "HARM_CATEGORY_DANGEROUS_CONTENT",
+                    "HARM_CATEGORY_CIVIC_INTEGRITY"
+                )
+                for (cat in categories) {
+                    put(JSONObject().apply {
+                        put("category", cat)
+                        put("threshold", "BLOCK_NONE")
+                    })
+                }
+            }
+            put("safetySettings", safetyArray)
         }
 
         val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey"
@@ -97,6 +130,10 @@ class GeminiTranslationService(private val context: Context) {
 
         for (attempt in 0..maxRetries) {
             try {
+                if (Thread.currentThread().isInterrupted) {
+                    throw InterruptedException("Translation task was interrupted")
+                }
+
                 throttleRpm(rpm)
 
                 val request = Request.Builder()
@@ -115,28 +152,82 @@ class GeminiTranslationService(private val context: Context) {
                         responseString
                     }
 
-                    if ((response.code == 429 || response.code in 500..599) && attempt < maxRetries) {
-                        val backoffMs = (2000L * (2.0.pow(attempt.toDouble()))).toLong().coerceIn(2000L, 10000L)
+                    if (response.code == 429 && attempt < maxRetries) {
+                        // Extract retry delay from message if available e.g. "retry in 18.5s"
+                        var waitMs = 15_000L * (attempt + 1)
+                        val matcher = RETRY_DELAY_REGEX.matcher(errorMsg)
+                        if (matcher.find()) {
+                            val sec = matcher.group(1)?.toDoubleOrNull()
+                            if (sec != null && sec > 0) {
+                                waitMs = ((sec + 1.0) * 1000).toLong()
+                            }
+                        }
+                        val waitSec = (waitMs / 1000).toInt().coerceAtLeast(1)
+                        onWaitingQuota?.invoke(waitSec)
+                        Thread.sleep(waitMs)
+                        continue
+                    }
+
+                    if (response.code in 500..599 && attempt < maxRetries) {
+                        val backoffMs = (3000L * (2.0.pow(attempt.toDouble()))).toLong().coerceIn(3000L, 20000L)
                         Thread.sleep(backoffMs)
                         continue
                     }
+
                     throw IOException("Gemini API error (HTTP ${response.code}): $errorMsg")
                 }
 
                 val root = JSONObject(responseString)
-                val candidates = root.getJSONArray("candidates")
+                val candidates = root.optJSONArray("candidates")
+                if (candidates == null || candidates.length() == 0) {
+                    val promptFeedback = root.optJSONObject("promptFeedback")
+                    val blockReason = promptFeedback?.optString("blockReason", "")
+                    if (!blockReason.isNullOrEmpty()) {
+                        throw IOException("Gemini blocked prompt: $blockReason")
+                    }
+                    throw IOException("Empty response from Gemini API")
+                }
+
                 val firstCandidate = candidates.getJSONObject(0)
-                val content = firstCandidate.getJSONObject("content")
-                val parts = content.getJSONArray("parts")
-                val rawText = parts.getJSONObject(0).getString("text")
+                val content = firstCandidate.optJSONObject("content")
+                if (content == null) {
+                    val finishReason = firstCandidate.optString("finishReason", "UNKNOWN")
+                    throw IOException("Gemini candidate finished with reason: $finishReason")
+                }
+
+                val parts = content.optJSONArray("parts")
+                if (parts == null || parts.length() == 0) {
+                    throw IOException("Gemini candidate content has no parts")
+                }
+
+                val textBuilder = StringBuilder()
+                for (p in 0 until parts.length()) {
+                    val partObj = parts.optJSONObject(p)
+                    val t = partObj?.optString("text", "") ?: ""
+                    textBuilder.append(t)
+                }
+
+                val rawText = textBuilder.toString()
+                if (rawText.isBlank()) {
+                    throw IOException("Gemini returned blank translation")
+                }
 
                 return cleanGeminiOutput(rawText)
 
             } catch (e: Exception) {
                 lastException = e
+                if (e is InterruptedException || Thread.currentThread().isInterrupted) {
+                    Thread.currentThread().interrupt()
+                    throw e
+                }
                 if (attempt < maxRetries) {
-                    val backoffMs = (2000L * (2.0.pow(attempt.toDouble()))).toLong().coerceIn(2000L, 10000L)
-                    try { Thread.sleep(backoffMs) } catch (_: InterruptedException) { break }
+                    val backoffMs = (3000L * (2.0.pow(attempt.toDouble()))).toLong().coerceIn(3000L, 15000L)
+                    try {
+                        Thread.sleep(backoffMs)
+                    } catch (_: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        break
+                    }
                 }
             }
         }

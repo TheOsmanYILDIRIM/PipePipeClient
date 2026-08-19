@@ -183,6 +183,48 @@ object SubtitleParser {
             }
         }
 
+        if (blocks.isNotEmpty()) return blocks
+
+        // Fallback: Scan line by line for single-newline separated cues
+        val allLines = normalized.lines().map { it.trim() }
+        var currentStartMs = 0L
+        var currentEndMs = 0L
+        val currentTextLines = mutableListOf<String>()
+        var inCue = false
+
+        for (line in allLines) {
+            val match = VTT_OR_SRT_TIME_LINE_REGEX.find(line)
+            if (match != null) {
+                if (inCue && currentTextLines.isNotEmpty()) {
+                    val rawText = currentTextLines
+                        .filter { !it.startsWith("NOTE") && !it.startsWith("STYLE") && it.toIntOrNull() == null }
+                        .joinToString("\n")
+                    val cleanText = unescapeHtml(rawText)
+                    if (cleanText.isNotEmpty()) {
+                        blocks.add(SubtitleBlock(seq++, currentStartMs, currentEndMs, msToTimeCode(currentStartMs, currentEndMs), cleanText))
+                    }
+                    currentTextLines.clear()
+                }
+                currentStartMs = parseTimestampToMs(match.groupValues[1])
+                currentEndMs = parseTimestampToMs(match.groupValues[2])
+                inCue = true
+            } else if (inCue) {
+                if (line.isNotEmpty() && line.toIntOrNull() == null) {
+                    currentTextLines.add(line)
+                }
+            }
+        }
+
+        if (inCue && currentTextLines.isNotEmpty()) {
+            val rawText = currentTextLines
+                .filter { !it.startsWith("NOTE") && !it.startsWith("STYLE") && it.toIntOrNull() == null }
+                .joinToString("\n")
+            val cleanText = unescapeHtml(rawText)
+            if (cleanText.isNotEmpty()) {
+                blocks.add(SubtitleBlock(seq++, currentStartMs, currentEndMs, msToTimeCode(currentStartMs, currentEndMs), cleanText))
+            }
+        }
+
         return blocks
     }
 
