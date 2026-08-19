@@ -5,7 +5,6 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.view.Menu
-import androidx.preference.PreferenceManager
 import com.google.android.exoplayer2.text.Cue
 import com.google.android.exoplayer2.ui.SubtitleView
 import org.schabi.newpipe.R
@@ -92,12 +91,11 @@ object GeminiSubtitleHelper {
 
     @JvmStatic
     fun startLiveTicker(
-        handler: Handler,
         positionSupplier: PositionSupplier,
         subtitleView: SubtitleView?,
         blocks: List<SubtitleBlock>
     ) {
-        stopLiveTicker(handler)
+        stopLiveTicker()
         activeBlocks = blocks
 
         tickerRunnable = object : Runnable {
@@ -112,15 +110,15 @@ object GeminiSubtitleHelper {
                         subtitleView.setCues(Collections.emptyList())
                     }
                 }
-                handler.postDelayed(this, 100)
+                mainHandler.postDelayed(this, 100)
             }
         }
-        handler.post(tickerRunnable!!)
+        mainHandler.post(tickerRunnable!!)
     }
 
     @JvmStatic
-    fun stopLiveTicker(handler: Handler) {
-        tickerRunnable?.let { handler.removeCallbacks(it) }
+    fun stopLiveTicker() {
+        tickerRunnable?.let { mainHandler.removeCallbacks(it) }
         tickerRunnable = null
         activeBlocks = emptyList()
     }

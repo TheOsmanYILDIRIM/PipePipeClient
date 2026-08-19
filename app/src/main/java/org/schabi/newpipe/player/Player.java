@@ -1014,7 +1014,7 @@ public final class Player implements
 
         stopSabrBackoffCountdown();
         cleanupVideoSurface();
-        org.schabi.newpipe.gemini.GeminiSubtitleHelper.stopLiveTicker(mainHandler);
+        org.schabi.newpipe.gemini.GeminiSubtitleHelper.stopLiveTicker();
 
         if (!exoPlayerIsNull()) {
             simpleExoPlayer.removeListener(this);
@@ -4285,7 +4285,7 @@ case ERROR_CODE_DECODER_INIT_FAILED: {
         final MenuItem captionOffItem = captionPopupMenu.getMenu().add(POPUP_MENU_ID_CAPTION,
                 0, Menu.NONE, R.string.caption_none);
         captionOffItem.setOnMenuItemClickListener(menuItem -> {
-            org.schabi.newpipe.gemini.GeminiSubtitleHelper.stopLiveTicker(mainHandler);
+            org.schabi.newpipe.gemini.GeminiSubtitleHelper.stopLiveTicker();
             final int textRendererIndex = getCaptionRendererIndex();
             if (textRendererIndex != RENDERER_UNAVAILABLE) {
                 trackSelector.setParameters(trackSelector.buildUponParameters()
@@ -4522,7 +4522,6 @@ case ERROR_CODE_DECODER_INIT_FAILED: {
             binding.captionTextView.setText(R.string.gemini_translate_title);
         }
         org.schabi.newpipe.gemini.GeminiSubtitleHelper.startLiveTicker(
-                mainHandler,
                 () -> simpleExoPlayer != null ? simpleExoPlayer.getCurrentPosition() : 0L,
                 binding != null ? binding.subtitleView : null,
                 blocks
