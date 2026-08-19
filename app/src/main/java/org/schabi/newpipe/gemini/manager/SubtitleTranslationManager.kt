@@ -63,7 +63,9 @@ class SubtitleTranslationManager(private val context: Context) {
                 val prefs = PreferenceManager.getDefaultSharedPreferences(context)
                 val chunkSize = prefs.getString("gemini_chunk_size", "50")
                     ?.toIntOrNull()?.coerceIn(10, 500) ?: 50
-                val modelName = prefs.getString("gemini_model", "gemini-2.0-flash") ?: "gemini-2.0-flash"
+                val customModel = prefs.getString("gemini_custom_model", "")?.trim().orEmpty()
+                val listModel = prefs.getString("gemini_model", "gemini-3.5-flash-lite") ?: "gemini-3.5-flash-lite"
+                val modelName = if (customModel.isNotEmpty()) customModel else listModel
                 val sourceLang = subtitleStream.languageTag?.ifBlank { "auto" } ?: "auto"
 
                 postState(TranslationState.Downloading)

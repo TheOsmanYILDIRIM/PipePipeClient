@@ -56,12 +56,9 @@ class GeminiTranslationService(private val context: Context) {
     ): String {
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
         val apiKey = prefs.getString("gemini_api_key", "")?.trim().orEmpty()
-        var model = prefs.getString("gemini_model", "gemini-2.0-flash")?.trim()?.ifEmpty { "gemini-2.0-flash" } ?: "gemini-2.0-flash"
-
-        // Sanitize legacy or invalid model names
-        if (model.startsWith("gemini-3.") || model.startsWith("gemini-2.5-")) {
-            model = "gemini-2.0-flash"
-        }
+        val customModel = prefs.getString("gemini_custom_model", "")?.trim().orEmpty()
+        val listModel = prefs.getString("gemini_model", "gemini-3.5-flash-lite")?.trim()?.ifEmpty { "gemini-3.5-flash-lite" } ?: "gemini-3.5-flash-lite"
+        val model = if (customModel.isNotEmpty()) customModel else listModel
 
         val rpmStr = prefs.getString("gemini_rpm_limit", "15") ?: "15"
         val rpm = rpmStr.toIntOrNull() ?: 15

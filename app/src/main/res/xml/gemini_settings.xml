@@ -22,7 +22,16 @@
             android:summary="%s"
             android:entries="@array/gemini_models_entries"
             android:entryValues="@array/gemini_models_values"
-            android:defaultValue="gemini-2.0-flash"
+            android:defaultValue="gemini-3.5-flash-lite"
+            app:iconSpaceReserved="false" />
+
+        <EditTextPreference
+            android:key="gemini_custom_model"
+            android:title="@string/gemini_custom_model"
+            android:summary="@string/gemini_custom_model_summary"
+            android:dialogTitle="@string/gemini_custom_model"
+            android:inputType="text"
+            app:useSimpleSummaryProvider="true"
             app:iconSpaceReserved="false" />
 
         <ListPreference

@@ -47,7 +47,7 @@ android {
     }
 
     signingConfigs {
-        geminiDebug {
+        geminiSigning {
             def ksFile = file("gemini-signing.keystore")
             if (ksFile.exists()) {
                 storeFile ksFile
@@ -70,23 +70,26 @@ android {
         debug {
             debuggable true
             if (file("gemini-signing.keystore").exists()) {
-                signingConfig signingConfigs.geminiDebug
+                signingConfig signingConfigs.geminiSigning
             }
             applicationIdSuffix ".gemini"
             resValue "string", "app_name", "PipePipe Gemini"
         }
 
         release {
-            if (signingConfigs.findByName("release")) {
+            if (file("gemini-signing.keystore").exists()) {
+                signingConfig signingConfigs.geminiSigning
+            } else if (signingConfigs.findByName("release")) {
                 signingConfig signingConfigs.release
             }
             if (System.properties.containsKey('packageSuffix')) {
                 applicationIdSuffix System.getProperty('packageSuffix')
                 resValue "string", "app_name", "PipePipe " + System.getProperty('packageSuffix')
             } else {
-                resValue "string", "app_name", "PipePipe"
+                applicationIdSuffix ".gemini"
+                resValue "string", "app_name", "PipePipe Gemini"
             }
-            minifyEnabled true
+            minifyEnabled false
             shrinkResources false // disabled to fix F-Droid's reproducible build
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
