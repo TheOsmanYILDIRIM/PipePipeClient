@@ -7,6 +7,7 @@ import androidx.preference.PreferenceManager
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.schabi.newpipe.extractor.stream.SubtitlesStream
+import org.schabi.newpipe.gemini.GeminiNotificationHelper
 import org.schabi.newpipe.gemini.api.GeminiTranslationService
 import org.schabi.newpipe.gemini.db.GeminiDatabase
 import org.schabi.newpipe.gemini.db.TranslatedSubtitle
