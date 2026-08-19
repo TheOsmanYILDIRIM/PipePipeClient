@@ -130,7 +130,7 @@ class SubtitleTranslationManager(private val context: Context) {
 
                     val translatedSrt = geminiService.translateChunk(chunkToTranslate, targetLanguage)
                     val parsedTranslated = SubtitleParser.parse(translatedSrt)
-                    val matchedBlocks = matchTranslatedBlocks(chunks[chunkIdx], parsedTranslated)
+                    val matchedBlocks = matchTranslatedBlocks(chunks[chunkIdx], parsedTranslated, translatedSrt)
 
                     translatedChunkBlocks[chunkIdx] = matchedBlocks
 
@@ -187,19 +187,41 @@ class SubtitleTranslationManager(private val context: Context) {
 
     private fun matchTranslatedBlocks(
         originalChunk: List<SubtitleBlock>,
-        translatedChunk: List<SubtitleBlock>
+        translatedChunk: List<SubtitleBlock>,
+        rawTranslatedText: String = ""
     ): List<SubtitleBlock> {
-        return originalChunk.mapIndexed { index, originalBlock ->
-            val transText = translatedChunk.getOrNull(index)?.text?.ifBlank { originalBlock.text }
-                ?: originalBlock.text
-            SubtitleBlock(
-                sequenceNumber = originalBlock.sequenceNumber,
-                startMs = originalBlock.startMs,
-                endMs = originalBlock.endMs,
-                timeCode = originalBlock.timeCode,
-                text = transText
-            )
+        if (translatedChunk.isNotEmpty()) {
+            return originalChunk.mapIndexed { index, originalBlock ->
+                val transText = translatedChunk.getOrNull(index)?.text?.ifBlank { originalBlock.text }
+                    ?: originalBlock.text
+                SubtitleBlock(
+                    sequenceNumber = originalBlock.sequenceNumber,
+                    startMs = originalBlock.startMs,
+                    endMs = originalBlock.endMs,
+                    timeCode = originalBlock.timeCode,
+                    text = transText
+                )
+            }
         }
+
+        val rawLines = rawTranslatedText.lines()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && !it.contains("-->") && it.toIntOrNull() == null }
+
+        if (rawLines.isNotEmpty()) {
+            return originalChunk.mapIndexed { index, originalBlock ->
+                val transText = rawLines.getOrNull(index)?.ifBlank { originalBlock.text } ?: originalBlock.text
+                SubtitleBlock(
+                    sequenceNumber = originalBlock.sequenceNumber,
+                    startMs = originalBlock.startMs,
+                    endMs = originalBlock.endMs,
+                    timeCode = originalBlock.timeCode,
+                    text = transText
+                )
+            }
+        }
+
+        return originalChunk
     }
 
     private fun buildCombinedBlocks(chunks: Array<List<SubtitleBlock>?>): List<SubtitleBlock> {

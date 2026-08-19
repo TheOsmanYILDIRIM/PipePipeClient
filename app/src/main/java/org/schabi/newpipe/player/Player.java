@@ -3760,11 +3760,8 @@ case ERROR_CODE_DECODER_INIT_FAILED: {
         initThumbnail(info.getThumbnailUrl());
         registerStreamViewed();
 
-        final String videoId = info.getUrl().contains("v=")
-                ? info.getUrl().substring(info.getUrl().lastIndexOf("v=") + 2).split("&")[0]
-                : info.getId();
         org.schabi.newpipe.gemini.GeminiSubtitleHelper.checkAndAutoLoadCachedSubtitles(
-                context, videoId, this::onGeminiSubtitlesReady
+                context, info, this::onGeminiSubtitlesReady
         );
         updateStreamRelatedViews();
         showHideKodiButton();

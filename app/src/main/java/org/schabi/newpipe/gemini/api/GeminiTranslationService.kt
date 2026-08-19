@@ -10,6 +10,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import kotlin.math.pow
 
 class GeminiTranslationService(private val context: Context) {
 
@@ -19,7 +20,7 @@ class GeminiTranslationService(private val context: Context) {
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    fun translateChunk(chunkText: String, targetLanguage: String): String {
+    fun translateChunk(chunkText: String, targetLanguage: String, maxRetries: Int = 3): String {
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
         val apiKey = prefs.getString("gemini_api_key", "")?.trim().orEmpty()
         val model = prefs.getString("gemini_model", "gemini-3.5-flash-lite")?.trim()?.ifEmpty { "gemini-3.5-flash-lite" } ?: "gemini-3.5-flash-lite"
@@ -66,38 +67,61 @@ class GeminiTranslationService(private val context: Context) {
         val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey"
         val requestBody = jsonBody.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
 
-        val request = Request.Builder()
-            .url(url)
-            .post(requestBody)
-            .build()
+        var lastException: Exception? = null
 
-        val response = httpClient.newCall(request).execute()
-        val responseString = response.body?.string().orEmpty()
+        for (attempt in 0..maxRetries) {
+            try {
+                val request = Request.Builder()
+                    .url(url)
+                    .post(requestBody)
+                    .build()
 
-        if (!response.isSuccessful) {
-            val errorMsg = try {
-                val errObj = JSONObject(responseString).getJSONObject("error")
-                errObj.optString("message", responseString)
-            } catch (_: Exception) {
-                responseString
+                val response = httpClient.newCall(request).execute()
+                val responseString = response.body?.string().orEmpty()
+
+                if (!response.isSuccessful) {
+                    val errorMsg = try {
+                        val errObj = JSONObject(responseString).getJSONObject("error")
+                        errObj.optString("message", responseString)
+                    } catch (_: Exception) {
+                        responseString
+                    }
+
+                    // Retry on rate limit (429) or temporary server errors (5xx)
+                    if ((response.code == 429 || response.code in 500..599) && attempt < maxRetries) {
+                        val backoffMs = (1500L * (2.0.pow(attempt.toDouble()))).toLong().coerceIn(1000L, 8000L)
+                        Thread.sleep(backoffMs)
+                        continue
+                    }
+                    throw IOException("Gemini API error (HTTP ${response.code}): $errorMsg")
+                }
+
+                val root = JSONObject(responseString)
+                val candidates = root.getJSONArray("candidates")
+                val firstCandidate = candidates.getJSONObject(0)
+                val content = firstCandidate.getJSONObject("content")
+                val parts = content.getJSONArray("parts")
+                val rawText = parts.getJSONObject(0).getString("text")
+
+                return cleanGeminiOutput(rawText)
+
+            } catch (e: Exception) {
+                lastException = e
+                if (attempt < maxRetries) {
+                    val backoffMs = (1500L * (2.0.pow(attempt.toDouble()))).toLong().coerceIn(1000L, 8000L)
+                    try { Thread.sleep(backoffMs) } catch (_: InterruptedException) { break }
+                }
             }
-            throw IOException("Gemini API error (HTTP ${response.code}): $errorMsg")
         }
 
-        return try {
-            val root = JSONObject(responseString)
-            val candidates = root.getJSONArray("candidates")
-            val firstCandidate = candidates.getJSONObject(0)
-            val content = firstCandidate.getJSONObject("content")
-            val parts = content.getJSONArray("parts")
-            val rawText = parts.getJSONObject(0).getString("text")
+        throw lastException ?: IOException("Failed to translate chunk after retries")
+    }
 
-            rawText
-                .replace("```srt", "")
-                .replace("```", "")
-                .trim()
-        } catch (e: Exception) {
-            throw IOException("Failed to parse Gemini API response: ${e.message}", e)
-        }
+    private fun cleanGeminiOutput(raw: String): String {
+        return raw
+            .replace("```srt", "")
+            .replace("```txt", "")
+            .replace("```", "")
+            .trim()
     }
 }
