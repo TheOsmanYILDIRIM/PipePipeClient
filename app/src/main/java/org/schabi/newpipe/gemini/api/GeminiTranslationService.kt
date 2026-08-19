@@ -22,7 +22,7 @@ class GeminiTranslationService(private val context: Context) {
     fun translateChunk(chunkText: String, targetLanguage: String): String {
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
         val apiKey = prefs.getString("gemini_api_key", "")?.trim().orEmpty()
-        val model = prefs.getString("gemini_model", "gemini-3.5-flash-lite")?.trim().ifEmpty { "gemini-3.5-flash-lite" }
+        val model = prefs.getString("gemini_model", "gemini-3.5-flash-lite")?.trim()?.ifEmpty { "gemini-3.5-flash-lite" } ?: "gemini-3.5-flash-lite"
 
         if (apiKey.isEmpty()) {
             throw IllegalStateException("Gemini API key is not configured. Please set it in Settings -> Gemini AI Translation.")
