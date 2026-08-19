@@ -66,10 +66,13 @@ class SubtitleTranslationManager(private val context: Context) {
                 val sourceLang = subtitleStream.languageTag?.ifBlank { "auto" } ?: "auto"
 
                 postState(TranslationState.Downloading)
+                GeminiNotificationHelper.showStarting(context)
 
                 val rawContent = getSubtitleContent(subtitleStream)
                 if (rawContent.isBlank()) {
-                    postState(TranslationState.Error("Failed to fetch subtitle content (empty response)"))
+                    val errMsg = "Failed to fetch subtitle content (empty response)"
+                    postState(TranslationState.Error(errMsg))
+                    GeminiNotificationHelper.showError(context, errMsg)
                     return@submit
                 }
 
@@ -79,7 +82,9 @@ class SubtitleTranslationManager(private val context: Context) {
                 val originalBlocks = SubtitleParser.parse(rawContent)
                 if (originalBlocks.isEmpty()) {
                     val preview = rawContent.take(150).replace("\n", " ")
-                    postState(TranslationState.Error("Unrecognized subtitle format. Preview: $preview"))
+                    val errMsg = "Unrecognized subtitle format. Preview: $preview"
+                    postState(TranslationState.Error(errMsg))
+                    GeminiNotificationHelper.showError(context, errMsg)
                     return@submit
                 }
 
@@ -103,12 +108,14 @@ class SubtitleTranslationManager(private val context: Context) {
                     val currentCombinedBlocks = buildCombinedBlocks(translatedChunkBlocks)
                     writeTempSrtFile(videoId, targetLanguage, SubtitleParser.toSrt(currentCombinedBlocks))
                     postBlocks(currentCombinedBlocks)
+                    GeminiNotificationHelper.showChunk1Ready(context)
                 }
 
                 if (cachedCount == totalChunks) {
                     val currentCombinedBlocks = buildCombinedBlocks(translatedChunkBlocks)
                     writeTempSrtFile(videoId, targetLanguage, SubtitleParser.toSrt(currentCombinedBlocks))
                     postState(TranslationState.Ready(currentCombinedBlocks.size))
+                    GeminiNotificationHelper.showComplete(context, currentCombinedBlocks.size)
                     return@submit
                 }
 
@@ -117,6 +124,7 @@ class SubtitleTranslationManager(private val context: Context) {
                     if (translatedChunkBlocks[chunkIdx] != null) continue
 
                     postState(TranslationState.Translating(chunkIdx + 1, totalChunks))
+                    GeminiNotificationHelper.showProgress(context, chunkIdx + 1, totalChunks)
                     val chunkToTranslate = SubtitleParser.toSrt(chunks[chunkIdx])
 
                     val translatedSrt = geminiService.translateChunk(chunkToTranslate, targetLanguage)
@@ -141,15 +149,22 @@ class SubtitleTranslationManager(private val context: Context) {
                     val currentCombined = buildCombinedBlocks(translatedChunkBlocks)
                     writeTempSrtFile(videoId, targetLanguage, SubtitleParser.toSrt(currentCombined))
                     postBlocks(currentCombined)
+
+                    if (chunkIdx == 0 && cachedCount == 0) {
+                        GeminiNotificationHelper.showChunk1Ready(context)
+                    }
                 }
 
                 val finalCombined = buildCombinedBlocks(translatedChunkBlocks)
                 writeTempSrtFile(videoId, targetLanguage, SubtitleParser.toSrt(finalCombined))
                 postState(TranslationState.Ready(finalCombined.size))
+                GeminiNotificationHelper.showComplete(context, finalCombined.size)
 
             } catch (e: Exception) {
                 if (!Thread.currentThread().isInterrupted) {
-                    postState(TranslationState.Error(e.localizedMessage ?: "Translation failed"))
+                    val errMsg = e.localizedMessage ?: "Translation failed"
+                    postState(TranslationState.Error(errMsg))
+                    GeminiNotificationHelper.showError(context, errMsg)
                 }
             }
         }

@@ -4298,6 +4298,7 @@ case ERROR_CODE_DECODER_INIT_FAILED: {
         // Add Gemini AI Translation option
         org.schabi.newpipe.gemini.GeminiSubtitleHelper.addCaptionMenuItem(
                 context,
+                getParentActivity(),
                 captionPopupMenu.getMenu(),
                 POPUP_MENU_ID_CAPTION,
                 getCurrentStreamInfo().orElse(null),
