@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:title="@string/gemini_settings">
+
+    <PreferenceCategory
+        android:title="@string/gemini_settings"
+        app:iconSpaceReserved="false">
+
+        <EditTextPreference
+            android:key="gemini_api_key"
+            android:title="@string/gemini_api_key"
+            android:summary="@string/gemini_api_key_summary"
+            android:dialogTitle="@string/gemini_api_key"
+            android:inputType="textPassword"
+            app:useSimpleSummaryProvider="false"
+            app:iconSpaceReserved="false" />
+
+        <ListPreference
+            android:key="gemini_model"
+            android:title="@string/gemini_model"
+            android:summary="%s"
+            android:entries="@array/gemini_models_entries"
+            android:entryValues="@array/gemini_models_values"
+            android:defaultValue="gemini-3.5-flash-lite"
+            app:iconSpaceReserved="false" />
+
+        <EditTextPreference
+            android:key="gemini_chunk_size"
+            android:title="@string/gemini_chunk_size"
+            android:summary="@string/gemini_chunk_size_summary"
+            android:dialogTitle="@string/gemini_chunk_size"
+            android:defaultValue="50"
+            android:inputType="number"
+            app:useSimpleSummaryProvider="true"
+            app:iconSpaceReserved="false" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        android:title="@string/clear_translation_cache"
+        app:iconSpaceReserved="false">
+
+        <Preference
+            android:key="clear_gemini_cache"
+            android:title="@string/clear_translation_cache"
+            android:summary="@string/clear_translation_cache_summary"
+            app:iconSpaceReserved="false" />
+
+    </PreferenceCategory>
+
+</PreferenceScreen>

@@ -1014,6 +1014,7 @@ public final class Player implements
 
         stopSabrBackoffCountdown();
         cleanupVideoSurface();
+        org.schabi.newpipe.gemini.GeminiSubtitleHelper.stopLiveTicker(mainHandler);
 
         if (!exoPlayerIsNull()) {
             simpleExoPlayer.removeListener(this);
@@ -3758,6 +3759,13 @@ case ERROR_CODE_DECODER_INIT_FAILED: {
 
         initThumbnail(info.getThumbnailUrl());
         registerStreamViewed();
+
+        final String videoId = info.getUrl().contains("v=")
+                ? info.getUrl().substring(info.getUrl().lastIndexOf("v=") + 2).split("&")[0]
+                : info.getId();
+        org.schabi.newpipe.gemini.GeminiSubtitleHelper.checkAndAutoLoadCachedSubtitles(
+                context, videoId, this::onGeminiSubtitlesReady
+        );
         updateStreamRelatedViews();
         showHideKodiButton();
         initBCPlayer(); // TODO: bullet comments may be reset unexpectedly for round play streams
@@ -4277,6 +4285,7 @@ case ERROR_CODE_DECODER_INIT_FAILED: {
         final MenuItem captionOffItem = captionPopupMenu.getMenu().add(POPUP_MENU_ID_CAPTION,
                 0, Menu.NONE, R.string.caption_none);
         captionOffItem.setOnMenuItemClickListener(menuItem -> {
+            org.schabi.newpipe.gemini.GeminiSubtitleHelper.stopLiveTicker(mainHandler);
             final int textRendererIndex = getCaptionRendererIndex();
             if (textRendererIndex != RENDERER_UNAVAILABLE) {
                 trackSelector.setParameters(trackSelector.buildUponParameters()
@@ -4285,6 +4294,15 @@ case ERROR_CODE_DECODER_INIT_FAILED: {
             prefs.edit().remove(context.getString(R.string.caption_user_set_key)).apply();
             return true;
         });
+
+        // Add Gemini AI Translation option
+        org.schabi.newpipe.gemini.GeminiSubtitleHelper.addCaptionMenuItem(
+                context,
+                captionPopupMenu.getMenu(),
+                POPUP_MENU_ID_CAPTION,
+                getCurrentStreamInfo().orElse(null),
+                this::onGeminiSubtitlesReady
+        );
 
         // Add all available captions
         for (int i = 0; i < availableLanguages.size(); i++) {
@@ -4489,8 +4507,26 @@ case ERROR_CODE_DECODER_INIT_FAILED: {
         } else {
             binding.captionTextView.setText(selectedTracks.get().language);
         }
-        binding.captionTextView.setVisibility(
-                availableLanguages.isEmpty() ? View.GONE : View.VISIBLE);
+        final boolean hasSubtitles = !availableLanguages.isEmpty()
+                || (getCurrentStreamInfo().isPresent() && !getCurrentStreamInfo().get().getSubtitles().isEmpty());
+        binding.captionTextView.setVisibility(hasSubtitles ? View.VISIBLE : View.GONE);
+    }
+
+    public void onGeminiSubtitlesReady(@NonNull final List<org.schabi.newpipe.gemini.obj.SubtitleBlock> blocks) {
+        final int textRendererIndex = getCaptionRendererIndex();
+        if (textRendererIndex != RENDERER_UNAVAILABLE) {
+            trackSelector.setParameters(trackSelector.buildUponParameters()
+                    .setRendererDisabled(textRendererIndex, true));
+        }
+        if (binding != null) {
+            binding.captionTextView.setText(R.string.gemini_translate_title);
+        }
+        org.schabi.newpipe.gemini.GeminiSubtitleHelper.startLiveTicker(
+                mainHandler,
+                () -> simpleExoPlayer != null ? simpleExoPlayer.getCurrentPosition() : 0L,
+                binding != null ? binding.subtitleView : null,
+                blocks
+        );
     }
 
     private void onAudioTracksChanged() {

@@ -90,6 +90,12 @@
             app:iconSpaceReserved="false" />
 
     <PreferenceScreen
+        android:fragment="org.schabi.newpipe.gemini.ui.GeminiSettingsFragment"
+        android:icon="@drawable/ic_translate"
+        android:title="@string/gemini_settings"
+        app:iconSpaceReserved="false" />
+
+    <PreferenceScreen
         android:fragment="org.schabi.newpipe.settings.DebugSettingsFragment"
         android:icon="@drawable/ic_bug_report"
         android:key="@string/debug_pref_screen_key"

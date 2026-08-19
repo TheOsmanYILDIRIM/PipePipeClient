@@ -1083,4 +1083,26 @@
 <string name="sabr_backoff_notification_channel_description">Notifications when YouTube requires a playback request to wait</string>
 <string name="sabr_backoff_notification_title">Waiting for YouTube</string>
 <string name="sabr_backoff_notification_content">YouTube forces us to wait %1$d seconds before continuing playback</string>
+
+    <!-- Gemini Subtitle Translation -->
+    <string name="gemini_translate_title">Translate with Gemini AI</string>
+    <string name="gemini_settings">Gemini AI Translation</string>
+    <string name="gemini_settings_summary">Configure Google Gemini AI subtitle translator</string>
+    <string name="gemini_api_key">Gemini API Key</string>
+    <string name="gemini_api_key_summary">Enter your Google Gemini API key to enable live subtitle translation</string>
+    <string name="gemini_model">AI Model</string>
+    <string name="gemini_chunk_size">Chunk Size</string>
+    <string name="gemini_chunk_size_summary">Number of subtitle blocks translated per batch (Default: 50)</string>
+    <string name="select_source_subtitles">Select source subtitle track:</string>
+    <string name="downloading_subtitles">Fetching original subtitles…</string>
+    <string name="translation_in_progress">Translating chunk %1$d of %2$d…</string>
+    <string name="translation_complete">Translation complete</string>
+    <string name="translation_error">Translation failed: %1$s</string>
+    <string name="target_language_format">Target language: %1$s</string>
+    <string name="clear_translation_cache">Clear Translation Cache</string>
+    <string name="clear_translation_cache_summary">Delete all cached subtitle translations</string>
+    <string name="clear_translation_cache_confirm">Do you want to delete all cached subtitle translations? This cannot be undone.</string>
+    <string name="translation_cache_cleared">Translation cache cleared</string>
+    <string name="export_subtitles">Export / Share Subtitle</string>
+    <string name="no_subtitles_to_export">No subtitle content available to export yet. Select a subtitle track first.</string>
 </resources>
