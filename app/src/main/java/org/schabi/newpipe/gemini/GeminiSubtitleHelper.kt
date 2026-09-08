@@ -247,12 +247,9 @@ object GeminiSubtitleHelper {
         subtitleView: SubtitleView?,
         blocks: List<SubtitleBlock>
     ) {
+        stopLiveTicker()
         updateActiveBlocks(blocks)
         subtitleView?.visibility = View.VISIBLE
-
-        if (tickerRunnable != null) {
-            return
-        }
 
         tickerRunnable = object : Runnable {
             override fun run() {
@@ -284,6 +281,7 @@ object GeminiSubtitleHelper {
                 } catch (_: Exception) {
                     // Swallow to keep ticker alive
                 }
+                // Always reschedule — even after error — so ticker never dies
                 mainHandler.postDelayed(this, 50)
             }
         }
