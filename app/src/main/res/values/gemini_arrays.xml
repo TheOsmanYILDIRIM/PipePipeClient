@@ -51,4 +51,32 @@
         <item>5</item>
         <item>8</item>
     </string-array>
+
+    <string-array name="gemini_subtitle_position_entries">
+        <item>Alt (Varsayılan)</item>
+        <item>Orta</item>
+        <item>Üst</item>
+    </string-array>
+
+    <string-array name="gemini_subtitle_position_values">
+        <item>bottom</item>
+        <item>middle</item>
+        <item>top</item>
+    </string-array>
+
+    <string-array name="gemini_subtitle_size_entries">
+        <item>Küçük (%75)</item>
+        <item>Normal (%100)</item>
+        <item>Büyük (%125)</item>
+        <item>Çok Büyük (%150)</item>
+        <item>Dev (%200)</item>
+    </string-array>
+
+    <string-array name="gemini_subtitle_size_values">
+        <item>0.75</item>
+        <item>1.0</item>
+        <item>1.25</item>
+        <item>1.5</item>
+        <item>2.0</item>
+    </string-array>
 </resources>

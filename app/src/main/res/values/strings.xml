@@ -1111,4 +1111,11 @@
     <string name="translation_cache_cleared">Translation cache cleared</string>
     <string name="export_subtitles">Export / Share Subtitle</string>
     <string name="no_subtitles_to_export">No subtitle content available to export yet. Select a subtitle track first.</string>
+
+    <!-- Gemini Subtitle Display Settings -->
+    <string name="gemini_subtitle_display">Subtitle Display</string>
+    <string name="gemini_subtitle_time_offset">Time Offset (ms)</string>
+    <string name="gemini_subtitle_time_offset_summary">Adjust subtitle timing: negative = earlier, positive = later (Default: 0)</string>
+    <string name="gemini_subtitle_position">Subtitle Position</string>
+    <string name="gemini_subtitle_size">Subtitle Size</string>
 </resources>

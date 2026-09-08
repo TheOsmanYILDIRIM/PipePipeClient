@@ -65,6 +65,40 @@
     </PreferenceCategory>
 
     <PreferenceCategory
+        android:title="@string/gemini_subtitle_display"
+        app:iconSpaceReserved="false">
+
+        <EditTextPreference
+            android:key="gemini_subtitle_time_offset"
+            android:title="@string/gemini_subtitle_time_offset"
+            android:summary="@string/gemini_subtitle_time_offset_summary"
+            android:dialogTitle="@string/gemini_subtitle_time_offset"
+            android:defaultValue="0"
+            android:inputType="numberSigned"
+            app:useSimpleSummaryProvider="true"
+            app:iconSpaceReserved="false" />
+
+        <ListPreference
+            android:key="gemini_subtitle_position"
+            android:title="@string/gemini_subtitle_position"
+            android:summary="%s"
+            android:entries="@array/gemini_subtitle_position_entries"
+            android:entryValues="@array/gemini_subtitle_position_values"
+            android:defaultValue="bottom"
+            app:iconSpaceReserved="false" />
+
+        <ListPreference
+            android:key="gemini_subtitle_size"
+            android:title="@string/gemini_subtitle_size"
+            android:summary="%s"
+            android:entries="@array/gemini_subtitle_size_entries"
+            android:entryValues="@array/gemini_subtitle_size_values"
+            android:defaultValue="1.0"
+            app:iconSpaceReserved="false" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory
         android:title="@string/clear_translation_cache"
         app:iconSpaceReserved="false">
 
