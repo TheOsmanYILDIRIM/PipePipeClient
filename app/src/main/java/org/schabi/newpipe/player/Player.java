@@ -527,6 +527,12 @@ public final class Player implements
         binding = playerBinding;
         setupSubtitleView();
 
+        // Restart Gemini subtitle ticker with new view if blocks are preserved
+        org.schabi.newpipe.gemini.GeminiSubtitleHelper.restartTickerWithView(
+                () -> simpleExoPlayer != null ? simpleExoPlayer.getCurrentPosition() : 0L,
+                binding.subtitleView
+        );
+
         updateDisplayModeButtonText();
 
         binding.playbackSeekBar.getThumb()
@@ -1014,7 +1020,8 @@ public final class Player implements
 
         stopSabrBackoffCountdown();
         cleanupVideoSurface();
-        org.schabi.newpipe.gemini.GeminiSubtitleHelper.stopLiveTicker();
+        // Do NOT stop Gemini ticker here — preserve blocks across player recreation.
+        // Ticker will be restarted in initViews() -> restartTickerWithView().
 
         if (!exoPlayerIsNull()) {
             simpleExoPlayer.removeListener(this);

@@ -241,13 +241,27 @@ object GeminiSubtitleHelper {
         lastDisplayedText = ""
     }
 
+    /**
+     * Restart ticker with a new SubtitleView (e.g. after player recreation).
+     * Uses preserved activeBlocks if available — no need to wait for cache reload.
+     */
+    @JvmStatic
+    fun restartTickerWithView(
+        positionSupplier: PositionSupplier,
+        subtitleView: SubtitleView?
+    ) {
+        if (activeBlocks.isEmpty()) return
+        stopTickerOnly()
+        startLiveTicker(positionSupplier, subtitleView, activeBlocks)
+    }
+
     @JvmStatic
     fun startLiveTicker(
         positionSupplier: PositionSupplier,
         subtitleView: SubtitleView?,
         blocks: List<SubtitleBlock>
     ) {
-        stopLiveTicker()
+        stopTickerOnly()
         updateActiveBlocks(blocks)
         subtitleView?.visibility = View.VISIBLE
 
@@ -281,7 +295,6 @@ object GeminiSubtitleHelper {
                 } catch (_: Exception) {
                     // Swallow to keep ticker alive
                 }
-                // Always reschedule — even after error — so ticker never dies
                 mainHandler.postDelayed(this, 50)
             }
         }
@@ -312,12 +325,18 @@ object GeminiSubtitleHelper {
             .build()
     }
 
-    @JvmStatic
-    fun stopLiveTicker() {
+    /** Stop ticker only — preserve activeBlocks for player recreation */
+    private fun stopTickerOnly() {
         tickerRunnable?.let { mainHandler.removeCallbacks(it) }
         tickerRunnable = null
-        activeBlocks = emptyList()
         lastDisplayedText = ""
+    }
+
+    /** Stop ticker AND clear everything (used when subtitles are turned off) */
+    @JvmStatic
+    fun stopLiveTicker() {
+        stopTickerOnly()
+        activeBlocks = emptyList()
         activeManager?.cancel()
     }
 }
