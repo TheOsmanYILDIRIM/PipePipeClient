@@ -2,7 +2,7 @@ package org.schabi.newpipe.gemini.parser
 
 import org.json.JSONObject
 import org.schabi.newpipe.gemini.obj.SubtitleBlock
-import org.schabi.newpipe.gemini.obj.SubtitleBlock.Companion.mergeOverlapping
+import org.schabi.newpipe.gemini.obj.SubtitleBlock.Companion.fixCumulativeSubtitles
 import java.util.Locale
 
 object SubtitleParser {
@@ -36,7 +36,7 @@ object SubtitleParser {
      */
     fun parse(rawContent: String): List<SubtitleBlock> {
         val raw = parseRaw(rawContent)
-        return if (raw.isNotEmpty()) mergeOverlapping(raw) else emptyList()
+        return if (raw.isNotEmpty()) fixCumulativeSubtitles(raw) else emptyList()
     }
 
     private fun parseRaw(rawContent: String): List<SubtitleBlock> {

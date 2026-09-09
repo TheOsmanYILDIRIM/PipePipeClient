@@ -237,7 +237,7 @@ object GeminiSubtitleHelper {
 
     @Synchronized
     private fun updateActiveBlocks(blocks: List<SubtitleBlock>) {
-        activeBlocks = SubtitleBlock.mergeOverlapping(blocks).sortedBy { it.startMs }
+        activeBlocks = SubtitleBlock.fixCumulativeSubtitles(blocks).sortedBy { it.startMs }
         lastDisplayedText = ""
     }
 
