@@ -235,9 +235,40 @@ class SubtitleTranslationManager(private val context: Context) {
         translatedChunk: List<SubtitleBlock>,
         rawTranslatedText: String = ""
     ): List<SubtitleBlock> {
-        if (translatedChunk.isNotEmpty()) {
-            return originalChunk.mapIndexed { index, originalBlock ->
-                val transText = translatedChunk.getOrNull(index)?.text?.ifBlank { originalBlock.text }
+        if (translatedChunk.isEmpty()) {
+            val rawLines = rawTranslatedText.lines()
+                .map { it.trim() }
+                .filter { it.isNotEmpty() && !it.contains("-->") && it.toIntOrNull() == null }
+
+            if (rawLines.isNotEmpty()) {
+                return originalChunk.mapIndexed { index, originalBlock ->
+                    val transText = rawLines.getOrNull(index)?.ifBlank { originalBlock.text } ?: originalBlock.text
+                    SubtitleBlock(
+                        sequenceNumber = originalBlock.sequenceNumber,
+                        startMs = originalBlock.startMs,
+                        endMs = originalBlock.endMs,
+                        timeCode = originalBlock.timeCode,
+                        text = transText
+                    )
+                }
+            }
+            return originalChunk
+        }
+
+        // Detect word-level subtitles: original has many short blocks (1-3 words each)
+        val isWordLevel = originalChunk.size > 10 &&
+            originalChunk.take(10).all { it.text.trim().split("\\s+".toRegex()).size <= 3 }
+
+        if (isWordLevel) {
+            // Word-level: each translated block is a sentence that covers multiple
+            // original word-level blocks. Map each original block to the translated
+            // text of the translated block whose time range contains it.
+            return originalChunk.map { originalBlock ->
+                // Find the translated block whose time range covers this original block
+                val matchingTranslated = translatedChunk.firstOrNull { trans ->
+                    originalBlock.startMs >= trans.startMs && originalBlock.startMs < trans.endMs
+                }
+                val transText = matchingTranslated?.text?.ifBlank { originalBlock.text }
                     ?: originalBlock.text
                 SubtitleBlock(
                     sequenceNumber = originalBlock.sequenceNumber,
@@ -249,24 +280,18 @@ class SubtitleTranslationManager(private val context: Context) {
             }
         }
 
-        val rawLines = rawTranslatedText.lines()
-            .map { it.trim() }
-            .filter { it.isNotEmpty() && !it.contains("-->") && it.toIntOrNull() == null }
-
-        if (rawLines.isNotEmpty()) {
-            return originalChunk.mapIndexed { index, originalBlock ->
-                val transText = rawLines.getOrNull(index)?.ifBlank { originalBlock.text } ?: originalBlock.text
-                SubtitleBlock(
-                    sequenceNumber = originalBlock.sequenceNumber,
-                    startMs = originalBlock.startMs,
-                    endMs = originalBlock.endMs,
-                    timeCode = originalBlock.timeCode,
-                    text = transText
-                )
-            }
+        // Standard: index-based 1:1 mapping
+        return originalChunk.mapIndexed { index, originalBlock ->
+            val transText = translatedChunk.getOrNull(index)?.text?.ifBlank { originalBlock.text }
+                ?: originalBlock.text
+            SubtitleBlock(
+                sequenceNumber = originalBlock.sequenceNumber,
+                startMs = originalBlock.startMs,
+                endMs = originalBlock.endMs,
+                timeCode = originalBlock.timeCode,
+                text = transText
+            )
         }
-
-        return originalChunk
     }
 
     private fun buildCombinedBlocks(chunks: Array<List<SubtitleBlock>?>): List<SubtitleBlock> {

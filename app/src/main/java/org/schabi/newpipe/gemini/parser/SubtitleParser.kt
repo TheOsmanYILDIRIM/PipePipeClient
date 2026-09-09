@@ -39,12 +39,14 @@ object SubtitleParser {
         val raw = parseRaw(rawContent)
         if (raw.isEmpty()) return emptyList()
 
-        // Detect word-level auto-generated subtitles (YouTube: each cue is 1-2 words)
+        // Word-level subtitles: return raw blocks as-is.
+        // Accumulation is handled by the ticker (findActiveBlocks + concat).
+        // Only fix cumulative subtitles for non-word-level (sentence-level) cues.
         val isWordLevel = raw.size > 10 &&
             raw.take(10).all { it.text.trim().split("\\s+".toRegex()).size <= 3 }
 
         return if (isWordLevel) {
-            SubtitleBlock.buildDisplayList(raw)
+            raw.sortedBy { it.startMs }
         } else {
             SubtitleBlock.fixCumulativeSubtitles(raw)
         }

@@ -41,6 +41,9 @@ object GeminiSubtitleHelper {
     private var activeBlocks: List<SubtitleBlock> = emptyList()
 
     @Volatile
+    private var isWordLevel: Boolean = false
+
+    @Volatile
     private var lastDisplayedText: String = ""
 
     private var activeManager: SubtitleTranslationManager? = null
@@ -237,12 +240,12 @@ object GeminiSubtitleHelper {
 
     @Synchronized
     private fun updateActiveBlocks(blocks: List<SubtitleBlock>) {
-        // Detect word-level auto-generated subtitles and build display list
-        val isWordLevel = blocks.size > 10 &&
+        isWordLevel = blocks.size > 10 &&
             blocks.take(10).all { it.text.trim().split("\\s+".toRegex()).size <= 3 }
 
         activeBlocks = if (isWordLevel) {
-            SubtitleBlock.buildDisplayList(blocks).sortedBy { it.startMs }
+            // Word-level: keep raw blocks, ticker will findActiveBlocks and concatenate
+            blocks.sortedBy { it.startMs }
         } else {
             SubtitleBlock.fixCumulativeSubtitles(blocks).sortedBy { it.startMs }
         }
@@ -287,13 +290,23 @@ object GeminiSubtitleHelper {
                             ?.toLongOrNull() ?: 0L
                         val adjustedPos = (pos + timeOffsetMs).coerceAtLeast(0L)
 
-                        val currentBlock = SubtitleBlock.findActiveBlock(activeBlocks, adjustedPos)
+                        val displayText = if (isWordLevel) {
+                            // Word-level: find ALL active blocks and concatenate their text
+                            // This creates natural accumulation as words appear
+                            val active = SubtitleBlock.findActiveBlocks(activeBlocks, adjustedPos)
+                            if (active.isNotEmpty()) {
+                                active.joinToString(" ") { it.text }
+                            } else null
+                        } else {
+                            // Standard: find the single active block
+                            SubtitleBlock.findActiveBlock(activeBlocks, adjustedPos)?.text
+                        }
 
-                        if (currentBlock != null) {
-                            if (currentBlock.text != lastDisplayedText) {
-                                val cue = buildStyledCue(subtitleView, currentBlock.text)
+                        if (displayText != null) {
+                            if (displayText != lastDisplayedText) {
+                                val cue = buildStyledCue(subtitleView, displayText)
                                 subtitleView.setCues(Collections.singletonList(cue))
-                                lastDisplayedText = currentBlock.text
+                                lastDisplayedText = displayText
                             }
                         } else if (lastDisplayedText.isNotEmpty()) {
                             subtitleView.setCues(Collections.emptyList())
