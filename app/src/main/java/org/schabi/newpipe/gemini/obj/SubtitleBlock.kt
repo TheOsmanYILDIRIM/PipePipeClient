@@ -234,5 +234,76 @@ data class SubtitleBlock(
             merged.add(current)
             return merged
         }
+
+        /**
+         * Group word-level subtitle blocks into sentence families.
+         *
+         * YouTube auto-generated subtitles produce word-level cues where each cue
+         * is 1-3 words. Words that are spoken close together (within 2s) are
+         * grouped into a single display segment.
+         *
+         * Two grouping strategies:
+         * 1. Time-based: blocks starting within 2s of each other are grouped
+         * 2. Text-based: if text is cumulative (extends previous), keep the longest
+         *
+         * This produces natural sentence-length display segments instead of
+         * rapidly replacing 1-2 word fragments.
+         */
+        fun groupIntoSentenceFamilies(blocks: List<SubtitleBlock>): List<SubtitleBlock> {
+            if (blocks.isEmpty()) return blocks
+
+            val sorted = blocks.sortedBy { it.startMs }
+            val result = mutableListOf<SubtitleBlock>()
+
+            var familyText = sorted[0].text
+            var familyStartMs = sorted[0].startMs
+            var familyEndMs = sorted[0].endMs
+
+            for (i in 1 until sorted.size) {
+                val block = sorted[i]
+                val text = block.text.trim()
+                if (text.isEmpty()) continue
+
+                val gapMs = block.startMs - familyEndMs
+
+                // Group if: starts within 2s of family end, OR text extends family
+                val isCloseInTime = gapMs < 2000L
+                val familyNorm = familyText.lowercase().trim()
+                val textNorm = text.lowercase().trim()
+                val isTextExtension = textNorm.startsWith(familyNorm) ||
+                    familyNorm.startsWith(textNorm) ||
+                    textNorm.contains(familyNorm) ||
+                    familyNorm.contains(textNorm)
+
+                if (isCloseInTime || isTextExtension) {
+                    // Extend current family
+                    familyText = "$familyText $text".trim()
+                    familyEndMs = maxOf(familyEndMs, block.endMs)
+                } else {
+                    // New family
+                    result.add(SubtitleBlock(
+                        sequenceNumber = result.size + 1,
+                        startMs = familyStartMs,
+                        endMs = familyEndMs,
+                        timeCode = "",
+                        text = familyText
+                    ))
+                    familyText = text
+                    familyStartMs = block.startMs
+                    familyEndMs = block.endMs
+                }
+            }
+
+            // Add last family
+            result.add(SubtitleBlock(
+                sequenceNumber = result.size + 1,
+                startMs = familyStartMs,
+                endMs = familyEndMs,
+                timeCode = "",
+                text = familyText
+            ))
+
+            return result
+        }
     }
 }

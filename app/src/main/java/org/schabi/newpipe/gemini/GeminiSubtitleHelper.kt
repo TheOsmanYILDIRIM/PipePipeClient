@@ -244,7 +244,7 @@ object GeminiSubtitleHelper {
             blocks.take(10).all { it.text.trim().split("\\s+".toRegex()).size <= 5 }
 
         activeBlocks = if (isWordLevel) {
-            // Word-level: keep raw blocks, ticker will findActiveBlocks and concatenate
+            // Word-level: keep raw blocks for sliding window ticker
             blocks.sortedBy { it.startMs }
         } else {
             SubtitleBlock.fixCumulativeSubtitles(blocks).sortedBy { it.startMs }
@@ -291,9 +291,13 @@ object GeminiSubtitleHelper {
                         val adjustedPos = (pos + timeOffsetMs).coerceAtLeast(0L)
 
                         val displayText = if (isWordLevel) {
-                            // Word-level: find ALL active blocks and concatenate their text
-                            // This creates natural accumulation as words appear
-                            val active = SubtitleBlock.findActiveBlocks(activeBlocks, adjustedPos)
+                            // Word-level: sliding time window approach
+                            // Show all words from the last 3 seconds for natural accumulation
+                            val WINDOW_MS = 3000L
+                            val recentStart = (adjustedPos - WINDOW_MS).coerceAtLeast(0L)
+                            val active = activeBlocks.filter {
+                                it.startMs in recentStart..adjustedPos && it.endMs > adjustedPos
+                            }
                             if (active.isNotEmpty()) {
                                 active.joinToString(" ") { it.text }
                             } else null

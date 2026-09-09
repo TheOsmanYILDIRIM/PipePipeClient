@@ -39,9 +39,8 @@ object SubtitleParser {
         val raw = parseRaw(rawContent)
         if (raw.isEmpty()) return emptyList()
 
-        // Word-level subtitles: return raw blocks as-is.
-        // Accumulation is handled by the ticker (findActiveBlocks + concat).
-        // Only fix cumulative subtitles for non-word-level (sentence-level) cues.
+        // Word-level subtitles: keep raw blocks for sliding window ticker.
+        // Non-word-level: fix cumulative subtitles (strip prefix).
         val isWordLevel = raw.size > 10 &&
             raw.take(10).all { it.text.trim().split("\\s+".toRegex()).size <= 5 }
 
