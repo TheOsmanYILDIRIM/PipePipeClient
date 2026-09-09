@@ -237,7 +237,15 @@ object GeminiSubtitleHelper {
 
     @Synchronized
     private fun updateActiveBlocks(blocks: List<SubtitleBlock>) {
-        activeBlocks = SubtitleBlock.fixCumulativeSubtitles(blocks).sortedBy { it.startMs }
+        // Detect word-level auto-generated subtitles and build display list
+        val isWordLevel = blocks.size > 10 &&
+            blocks.take(10).all { it.text.trim().split("\\s+".toRegex()).size <= 3 }
+
+        activeBlocks = if (isWordLevel) {
+            SubtitleBlock.buildDisplayList(blocks).sortedBy { it.startMs }
+        } else {
+            SubtitleBlock.fixCumulativeSubtitles(blocks).sortedBy { it.startMs }
+        }
         lastDisplayedText = ""
     }
 

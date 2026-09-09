@@ -14,13 +14,11 @@ data class SubtitleBlock(
     companion object {
         /**
          * Find the active block at positionMs.
-         * When multiple blocks overlap (common with auto-generated subtitles),
-         * returns the one with the LATEST start time — the most recently spoken line.
+         * Returns the last block whose startMs <= positionMs and endMs > positionMs.
          */
         fun findActiveBlock(blocks: List<SubtitleBlock>, positionMs: Long): SubtitleBlock? {
             if (blocks.isEmpty()) return null
 
-            // Find the last block whose startMs <= positionMs
             var lo = 0
             var hi = blocks.size - 1
             var result = -1
@@ -36,7 +34,6 @@ data class SubtitleBlock(
 
             if (result < 0) return null
 
-            // Among blocks active at this position, prefer latest start
             var best: SubtitleBlock? = null
             var i = result
             while (i < blocks.size && blocks[i].startMs <= positionMs) {
@@ -53,20 +50,117 @@ data class SubtitleBlock(
         }
 
         /**
-         * Fix YouTube auto-generated rolling/cumulative subtitles.
+         * Find all blocks active at positionMs (used for word-level rolling window).
+         * YouTube auto-generated subtitles use word-level cues that overlap.
+         * At any given time, multiple word-cues may be active simultaneously.
+         */
+        fun findActiveBlocks(blocks: List<SubtitleBlock>, positionMs: Long): List<SubtitleBlock> {
+            if (blocks.isEmpty()) return emptyList()
+
+            var lo = 0
+            var hi = blocks.size - 1
+            var start = -1
+            while (lo <= hi) {
+                val mid = (lo + hi) ushr 1
+                if (blocks[mid].startMs <= positionMs) {
+                    start = mid
+                    lo = mid + 1
+                } else {
+                    hi = mid - 1
+                }
+            }
+
+            if (start < 0) return emptyList()
+
+            val active = mutableListOf<SubtitleBlock>()
+            var i = start
+            while (i < blocks.size && blocks[i].startMs <= positionMs) {
+                val b = blocks[i]
+                if (positionMs in b.startMs until b.endMs) {
+                    active.add(b)
+                }
+                i++
+            }
+
+            return active.sortedBy { it.startMs }
+        }
+
+        /**
+         * Build display list for word-level auto-generated subtitles.
          *
-         * YouTube auto-captions work like this:
-         *   1: 0-3s   "greetings"
-         *   2: 2-5s   "greetings and salutations"   ← cumulative
-         *   3: 4-7s   "greetings and salutations thanks"  ← cumulative
+         * YouTube auto-captions use word-level cues where each cue is 1-2 words.
+         * At any time, multiple overlapping cues may be active. We accumulate text
+         * from active cues and use gap detection to split into display segments.
          *
-         * Each segment contains ALL previously spoken words + new words.
-         * This method strips the prefix shared with the previous block,
-         * keeping only the NEW text for each segment.
-         *
-         * Also adjusts endMs so segments don't overlap:
-         *   Before: 1: 0-3s "greetings", 2: 2-5s "greetings and salutations"
-         *   After:  1: 0-2s "greetings", 2: 2-5s "and salutations"
+         * Rules:
+         * - Words from active cues at the same position are concatenated in order
+         * - A gap of >500ms between block starts triggers a new segment
+         * - If new text is a suffix of previous text, it's already displayed (skip)
+         * - If previous text is a prefix of new text, only show new text
+         */
+        fun buildDisplayList(blocks: List<SubtitleBlock>): List<SubtitleBlock> {
+            if (blocks.isEmpty()) return blocks
+
+            val sorted = blocks.sortedBy { it.startMs }
+            val result = mutableListOf<SubtitleBlock>()
+            var accumulated = ""
+            var segmentStartMs = sorted[0].startMs
+            var lastEndMs = 0L
+            val GAP_THRESHOLD_MS = 500L
+
+            for (block in sorted) {
+                val currentText = block.text.trim()
+                if (currentText.isEmpty()) continue
+
+                // Detect gap: if this block starts much later than previous ended,
+                // start a new display segment
+                if (result.isNotEmpty() && block.startMs - lastEndMs > GAP_THRESHOLD_MS) {
+                    // Save current segment
+                    result.add(SubtitleBlock(
+                        sequenceNumber = result.size + 1,
+                        startMs = segmentStartMs,
+                        endMs = lastEndMs,
+                        timeCode = "",
+                        text = accumulated
+                    ))
+                    accumulated = ""
+                    segmentStartMs = block.startMs
+                }
+
+                // Add text to accumulated display
+                if (accumulated.isEmpty()) {
+                    accumulated = currentText
+                } else {
+                    // Check if already displayed (suffix match)
+                    val accLower = accumulated.lowercase().trim()
+                    val curLower = currentText.lowercase().trim()
+                    if (accLower.endsWith(curLower)) {
+                        // Already displayed, skip
+                    } else {
+                        accumulated = "$accumulated $currentText"
+                    }
+                }
+
+                lastEndMs = maxOf(lastEndMs, block.endMs)
+            }
+
+            // Add final segment
+            if (accumulated.isNotEmpty()) {
+                result.add(SubtitleBlock(
+                    sequenceNumber = result.size + 1,
+                    startMs = segmentStartMs,
+                    endMs = lastEndMs,
+                    timeCode = "",
+                    text = accumulated
+                ))
+            }
+
+            return result
+        }
+
+        /**
+         * Legacy: Fix YouTube auto-generated rolling/cumulative subtitles.
+         * Kept for backward compatibility but buildDisplayList is preferred.
          */
         fun fixCumulativeSubtitles(blocks: List<SubtitleBlock>): List<SubtitleBlock> {
             if (blocks.isEmpty()) return blocks
@@ -79,27 +173,22 @@ data class SubtitleBlock(
                 val currentText = block.text.trim()
                 if (currentText.isEmpty()) continue
 
-                // Check if current text starts with previous text (cumulative pattern)
                 val newText = if (prevNormalized.isNotEmpty() &&
                     currentText.lowercase().startsWith(prevNormalized.lowercase())
                 ) {
-                    // Strip the prefix — keep only the new portion
                     currentText.substring(prevNormalized.length).trim()
                 } else {
-                    // Not cumulative (or first block), use as-is
                     currentText
                 }
 
                 if (newText.isEmpty()) continue
 
-                // Adjust endMs to not overlap with next block's start
                 val adjustedEndMs = if (result.isNotEmpty()) {
                     block.startMs.coerceAtLeast(result.last().endMs)
                 } else {
                     block.endMs
                 }
 
-                // Fix previous block's end to not overlap with this block's start
                 if (result.isNotEmpty()) {
                     val prev = result.last()
                     if (prev.endMs > block.startMs) {
@@ -118,8 +207,7 @@ data class SubtitleBlock(
         }
 
         /**
-         * Merge overlapping blocks that are NOT cumulative (independent subtitles
-         * that happen to overlap in time, e.g. from different speakers).
+         * Merge overlapping blocks that are NOT cumulative.
          */
         fun mergeOverlapping(blocks: List<SubtitleBlock>): List<SubtitleBlock> {
             if (blocks.isEmpty()) return blocks

@@ -3,6 +3,7 @@ package org.schabi.newpipe.gemini.parser
 import org.json.JSONObject
 import org.schabi.newpipe.gemini.obj.SubtitleBlock
 import org.schabi.newpipe.gemini.obj.SubtitleBlock.Companion.fixCumulativeSubtitles
+import org.schabi.newpipe.gemini.obj.SubtitleBlock.Companion.buildDisplayList
 import java.util.Locale
 
 object SubtitleParser {
@@ -36,7 +37,17 @@ object SubtitleParser {
      */
     fun parse(rawContent: String): List<SubtitleBlock> {
         val raw = parseRaw(rawContent)
-        return if (raw.isNotEmpty()) fixCumulativeSubtitles(raw) else emptyList()
+        if (raw.isEmpty()) return emptyList()
+
+        // Detect word-level auto-generated subtitles (YouTube: each cue is 1-2 words)
+        val isWordLevel = raw.size > 10 &&
+            raw.take(10).all { it.text.trim().split("\\s+".toRegex()).size <= 3 }
+
+        return if (isWordLevel) {
+            SubtitleBlock.buildDisplayList(raw)
+        } else {
+            SubtitleBlock.fixCumulativeSubtitles(raw)
+        }
     }
 
     private fun parseRaw(rawContent: String): List<SubtitleBlock> {
