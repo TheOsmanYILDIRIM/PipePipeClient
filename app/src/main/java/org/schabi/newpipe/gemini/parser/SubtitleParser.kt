@@ -43,7 +43,7 @@ object SubtitleParser {
         // Accumulation is handled by the ticker (findActiveBlocks + concat).
         // Only fix cumulative subtitles for non-word-level (sentence-level) cues.
         val isWordLevel = raw.size > 10 &&
-            raw.take(10).all { it.text.trim().split("\\s+".toRegex()).size <= 3 }
+            raw.take(10).all { it.text.trim().split("\\s+".toRegex()).size <= 5 }
 
         return if (isWordLevel) {
             raw.sortedBy { it.startMs }
@@ -244,7 +244,13 @@ object SubtitleParser {
             }
         }
 
-        return blocks
+        // Deduplicate: remove very short cues (< 100ms) that have same text as previous
+        return blocks.filterIndexed { index, block ->
+            if (index == 0) return@filterIndexed true
+            val prev = blocks[index - 1]
+            val isDuplicateShortCue = block.text == prev.text && (block.endMs - block.startMs) < 100L
+            !isDuplicateShortCue
+        }
     }
 
     private fun parseTimestampToMs(tsStr: String): Long {

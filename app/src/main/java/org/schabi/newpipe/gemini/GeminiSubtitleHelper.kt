@@ -241,7 +241,7 @@ object GeminiSubtitleHelper {
     @Synchronized
     private fun updateActiveBlocks(blocks: List<SubtitleBlock>) {
         isWordLevel = blocks.size > 10 &&
-            blocks.take(10).all { it.text.trim().split("\\s+".toRegex()).size <= 3 }
+            blocks.take(10).all { it.text.trim().split("\\s+".toRegex()).size <= 5 }
 
         activeBlocks = if (isWordLevel) {
             // Word-level: keep raw blocks, ticker will findActiveBlocks and concatenate

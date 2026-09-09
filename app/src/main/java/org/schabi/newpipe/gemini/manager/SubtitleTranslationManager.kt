@@ -257,7 +257,7 @@ class SubtitleTranslationManager(private val context: Context) {
 
         // Detect word-level subtitles: original has many short blocks (1-3 words each)
         val isWordLevel = originalChunk.size > 10 &&
-            originalChunk.take(10).all { it.text.trim().split("\\s+".toRegex()).size <= 3 }
+            originalChunk.take(10).all { it.text.trim().split("\\s+".toRegex()).size <= 5 }
 
         if (isWordLevel) {
             // Word-level: each translated block is a sentence that covers multiple
