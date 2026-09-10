@@ -95,16 +95,19 @@ class GeminiTranslationService(private val context: Context) {
         }
 
         val prompt = """
-            You are a professional subtitle translator.
-            Translate the following SRT subtitles into language: $targetLanguage.
-            
-            RULES:
-            1. Maintain the EXACT same SRT structure, sequence numbers, and timestamp codes.
-            2. Translate ONLY the text content of the subtitle cues naturally into $targetLanguage.
-            3. Do NOT add any extra commentary, notes, markdown formatting (no ```srt or ``` tags), or metadata.
-            4. Output ONLY the valid translated SRT text.
-            
-            SRT Subtitles to translate:
+            You are a professional subtitle translator for video playback.
+            Translate the following SRT subtitles into: $targetLanguage.
+
+            CRITICAL RULES:
+            1. Output EXACTLY the same number of subtitle blocks as input. Do NOT merge blocks.
+            2. Preserve EVERY timestamp line exactly as-is (HH:MM:SS,mmm --> HH:MM:SS,mmm). Do NOT modify, shift, or recalculate any timestamps.
+            3. Preserve EVERY sequence number exactly as-is.
+            4. Translate ONLY the text line of each subtitle cue naturally into $targetLanguage.
+            5. Keep each block separate — even if consecutive blocks have similar text, do NOT combine them.
+            6. Do NOT add commentary, notes, markdown (no ```srt or ``` tags), or metadata.
+            7. Output ONLY valid SRT text, nothing else.
+
+            Input SRT:
             $chunkText
         """.trimIndent()
 

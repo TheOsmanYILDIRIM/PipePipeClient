@@ -139,7 +139,20 @@ class SubtitleTranslationManager(private val context: Context) {
                     pool.submit {
                         if (Thread.currentThread().isInterrupted) return@submit
 
-                        val chunkToTranslate = SubtitleParser.toSrt(chunks[chunkIdx])
+                        val originalChunk = chunks[chunkIdx]
+                        val isWordChunk = SubtitleParser.isWordLevel(originalChunk)
+
+                        // Pre-process: group word-level blocks into sentence-level SRT
+                        // This gives Gemini clean non-overlapping timestamps to translate
+                        val chunkToTranslate: String
+                        val sentenceBlocks: List<SubtitleBlock>
+                        if (isWordChunk) {
+                            sentenceBlocks = SubtitleParser.groupWordsToSentences(originalChunk)
+                            chunkToTranslate = SubtitleParser.toSrt(sentenceBlocks)
+                        } else {
+                            sentenceBlocks = originalChunk
+                            chunkToTranslate = SubtitleParser.toSrt(originalChunk)
+                        }
 
                         val translatedSrt = try {
                             geminiService.translateChunk(
@@ -154,8 +167,12 @@ class SubtitleTranslationManager(private val context: Context) {
                             chunkToTranslate
                         }
 
-                        val parsedTranslated = SubtitleParser.parse(translatedSrt)
-                        val matchedBlocks = matchTranslatedBlocks(chunks[chunkIdx], parsedTranslated, translatedSrt)
+                        var parsedTranslated = SubtitleParser.parse(translatedSrt)
+                        // Gemini sometimes merges blocks with same text — deduplicate
+                        if (parsedTranslated.size < sentenceBlocks.size) {
+                            parsedTranslated = SubtitleParser.consolidateDuplicateText(parsedTranslated)
+                        }
+                        val matchedBlocks = matchTranslatedBlocks(originalChunk, parsedTranslated, translatedSrt, sentenceBlocks)
 
                         val currentDone: Int
                         val currentCombined: List<SubtitleBlock>
@@ -233,7 +250,8 @@ class SubtitleTranslationManager(private val context: Context) {
     private fun matchTranslatedBlocks(
         originalChunk: List<SubtitleBlock>,
         translatedChunk: List<SubtitleBlock>,
-        rawTranslatedText: String = ""
+        rawTranslatedText: String = "",
+        sentenceBlocks: List<SubtitleBlock>? = null
     ): List<SubtitleBlock> {
         if (translatedChunk.isEmpty()) {
             val rawLines = rawTranslatedText.lines()
@@ -255,27 +273,34 @@ class SubtitleTranslationManager(private val context: Context) {
             return originalChunk
         }
 
-        // Detect word-level subtitles: original has many short blocks (1-3 words each)
-        val isWordLevel = originalChunk.size > 10 &&
-            originalChunk.take(10).all { it.text.trim().split("\\s+".toRegex()).size <= 5 }
+        val isWordChunk = SubtitleParser.isWordLevel(originalChunk)
 
-        if (isWordLevel) {
-            // Word-level: each translated block is a sentence that covers multiple
-            // original word-level blocks. Map each original block to the translated
-            // text of the translated block whose time range contains it.
+        if (isWordChunk) {
+            // Word-level: map each original word-block to the translated sentence
+            // whose time range contains it. Use the pre-grouped sentenceBlocks as
+            // the bridge between original words and translated sentences.
+            val sentences = sentenceBlocks ?: SubtitleParser.groupWordsToSentences(originalChunk)
+
             return originalChunk.map { originalBlock ->
-                // Find the translated block whose time range covers this original block
-                val matchingTranslated = translatedChunk.firstOrNull { trans ->
-                    originalBlock.startMs >= trans.startMs && originalBlock.startMs < trans.endMs
+                // Find which sentence group this word belongs to
+                val sentenceIdx = sentences.indexOfFirst { sent ->
+                    originalBlock.startMs >= sent.startMs && originalBlock.startMs < sent.endMs
                 }
-                val transText = matchingTranslated?.text?.ifBlank { originalBlock.text }
-                    ?: originalBlock.text
+
+                val transText = if (sentenceIdx >= 0 && sentenceIdx < translatedChunk.size) {
+                    translatedChunk[sentenceIdx].text
+                } else {
+                    // Fallback: find nearest translated block by start time
+                    findNearestTranslatedBlock(translatedChunk, originalBlock.startMs)?.text
+                        ?: originalBlock.text
+                }
+
                 SubtitleBlock(
                     sequenceNumber = originalBlock.sequenceNumber,
                     startMs = originalBlock.startMs,
                     endMs = originalBlock.endMs,
                     timeCode = originalBlock.timeCode,
-                    text = transText
+                    text = transText.ifBlank { originalBlock.text }
                 )
             }
         }
@@ -292,6 +317,31 @@ class SubtitleTranslationManager(private val context: Context) {
                 text = transText
             )
         }
+    }
+
+    /**
+     * Find the translated block closest to the given position by start time.
+     * Fallback for when time-range matching fails (e.g., Gemini shifted timestamps).
+     */
+    private fun findNearestTranslatedBlock(
+        translatedChunk: List<SubtitleBlock>,
+        targetMs: Long
+    ): SubtitleBlock? {
+        if (translatedChunk.isEmpty()) return null
+
+        var best = translatedChunk[0]
+        var bestDist = kotlin.math.abs(best.startMs - targetMs)
+
+        for (i in 1 until translatedChunk.size) {
+            val dist = kotlin.math.abs(translatedChunk[i].startMs - targetMs)
+            if (dist < bestDist) {
+                best = translatedChunk[i]
+                bestDist = dist
+            }
+        }
+
+        // Only return if within reasonable range (10s)
+        return if (bestDist <= 10_000L) best else null
     }
 
     private fun buildCombinedBlocks(chunks: Array<List<SubtitleBlock>?>): List<SubtitleBlock> {

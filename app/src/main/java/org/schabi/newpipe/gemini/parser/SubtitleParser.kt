@@ -327,4 +327,103 @@ object SubtitleParser {
         val size = if (chunkSize <= 0) 50 else chunkSize
         return blocks.chunked(size)
     }
+
+    /**
+     * Detect if blocks are word-level (YouTube auto-generated captions).
+     * Word-level: >10 blocks, each with <=5 words, typical of auto-generated subtitles.
+     */
+    fun isWordLevel(blocks: List<SubtitleBlock>): Boolean {
+        return blocks.size > 10 &&
+            blocks.take(10).all { it.text.trim().split("\\s+".toRegex()).size <= 5 }
+    }
+
+    /**
+     * Group word-level blocks into sentence-level blocks with clean non-overlapping timestamps.
+     * Used to pre-process chunks before sending to Gemini AI translation.
+     *
+     * Strategy:
+     * 1. Time-based grouping: words starting within 1.5s of each other are grouped
+     * 2. Text extension: if a word's text extends the current sentence, keep extending
+     * 3. Each group gets the first word's startMs and the last word's endMs (non-overlapping)
+     *
+     * Result: clean SRT that Gemini can translate without confusion from overlapping timestamps.
+     */
+    fun groupWordsToSentences(blocks: List<SubtitleBlock>): List<SubtitleBlock> {
+        if (blocks.isEmpty()) return blocks
+
+        val sorted = blocks.sortedBy { it.startMs }
+        val result = mutableListOf<SubtitleBlock>()
+
+        var sentenceText = sorted[0].text.trim()
+        var sentenceStartMs = sorted[0].startMs
+        var sentenceEndMs = sorted[0].endMs
+        val GROUP_GAP_MS = 1500L
+
+        for (i in 1 until sorted.size) {
+            val block = sorted[i]
+            val text = block.text.trim()
+            if (text.isEmpty()) continue
+
+            val gapMs = block.startMs - sentenceEndMs
+            val sentenceNorm = sentenceText.lowercase().trim()
+            val textNorm = text.lowercase().trim()
+            val isTextExtension = textNorm.startsWith(sentenceNorm) ||
+                sentenceNorm.startsWith(textNorm) ||
+                textNorm.contains(sentenceNorm) ||
+                sentenceNorm.contains(textNorm)
+
+            if (gapMs < GROUP_GAP_MS || isTextExtension) {
+                sentenceText = "$sentenceText $text".trim()
+                sentenceEndMs = maxOf(sentenceEndMs, block.endMs)
+            } else {
+                result.add(SubtitleBlock(
+                    sequenceNumber = result.size + 1,
+                    startMs = sentenceStartMs,
+                    endMs = sentenceEndMs,
+                    timeCode = "",
+                    text = sentenceText
+                ))
+                sentenceText = text
+                sentenceStartMs = block.startMs
+                sentenceEndMs = block.endMs
+            }
+        }
+
+        result.add(SubtitleBlock(
+            sequenceNumber = result.size + 1,
+            startMs = sentenceStartMs,
+            endMs = sentenceEndMs,
+            timeCode = "",
+            text = sentenceText
+        ))
+
+        return result
+    }
+
+    /**
+     * Consolidate duplicate consecutive blocks with the same text.
+     * Gemini sometimes outputs duplicate lines (especially for word-level -> sentence mapping).
+     * Keeps only the first occurrence and extends its time range to cover duplicates.
+     */
+    fun consolidateDuplicateText(blocks: List<SubtitleBlock>): List<SubtitleBlock> {
+        if (blocks.size <= 1) return blocks
+
+        val result = mutableListOf<SubtitleBlock>()
+        var current = blocks[0]
+
+        for (i in 1 until blocks.size) {
+            val next = blocks[i]
+            if (next.text.trim().equals(current.text.trim(), ignoreCase = true)) {
+                current = current.copy(
+                    endMs = maxOf(current.endMs, next.endMs),
+                    timeCode = ""
+                )
+            } else {
+                result.add(current)
+                current = next
+            }
+        }
+        result.add(current)
+        return result
+    }
 }

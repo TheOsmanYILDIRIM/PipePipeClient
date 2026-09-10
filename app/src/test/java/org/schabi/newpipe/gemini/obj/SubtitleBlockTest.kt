@@ -2,6 +2,7 @@ package org.schabi.newpipe.gemini.obj
 
 import org.junit.Assert.*
 import org.junit.Test
+import org.schabi.newpipe.gemini.parser.SubtitleParser
 
 class SubtitleBlockTest {
 
@@ -207,5 +208,167 @@ class SubtitleBlockTest {
         // At exactly endMs: should NOT be active (endMs > pos is false)
         val inactive = SubtitleBlock.findActiveBlocks(blocks, 2000)
         assertTrue(inactive.isEmpty())
+    }
+
+    // ── isWordLevel detection ────────────────────────────────────────────
+
+    @Test
+    fun `isWordLevel detects YouTube auto-generated word-level blocks`() {
+        val blocks = listOf(
+            SubtitleBlock(1, 0, 1000, "", "Naber"),
+            SubtitleBlock(2, 200, 1200, "", "mühendisler"),
+            SubtitleBlock(3, 400, 1400, "", "? Ben"),
+            SubtitleBlock(4, 600, 1600, "", "Indie Dev"),
+            SubtitleBlock(5, 800, 1800, "", "Dan"),
+            SubtitleBlock(6, 1000, 2000, "", "En iyi"),
+            SubtitleBlock(7, 1200, 2200, "", "mühendislerin"),
+            SubtitleBlock(8, 1400, 2400, "", "en iyi"),
+            SubtitleBlock(9, 1600, 2600, "", "olmasının"),
+            SubtitleBlock(10, 1800, 2800, "", "sebebi"),
+            SubtitleBlock(11, 2000, 3000, "", "sizden"),
+        )
+        assertTrue(SubtitleParser.isWordLevel(blocks))
+    }
+
+    @Test
+    fun `isWordLevel returns false for normal subtitles`() {
+        val blocks = listOf(
+            SubtitleBlock(1, 0, 3000, "", "This is a full sentence with many words"),
+            SubtitleBlock(2, 2000, 5000, "", "Another complete sentence here"),
+        )
+        assertFalse(SubtitleParser.isWordLevel(blocks))
+    }
+
+    // ── groupWordsToSentences ─────────────────────────────────────────────
+
+    @Test
+    fun `groupWordsToSentences merges overlapping words into sentences`() {
+        val words = listOf(
+            SubtitleBlock(1, 100, 1427, "", "Naber"),
+            SubtitleBlock(2, 447, 2245, "", "mühendisler"),
+            SubtitleBlock(3, 1245, 3062, "", "? Ben Indie Dev"),
+            SubtitleBlock(4, 3500, 4500, "", "Bir sonraki"),
+            SubtitleBlock(5, 3800, 4800, "", "cümle burada"),
+        )
+
+        val sentences = SubtitleParser.groupWordsToSentences(words)
+
+        // First 3 words should group into one sentence (close in time)
+        // Last 2 words should group into another sentence
+        assertEquals(2, sentences.size)
+        assertEquals("Naber mühendisler ? Ben Indie Dev", sentences[0].text)
+        assertEquals(100L, sentences[0].startMs)
+        assertEquals(3062L, sentences[0].endMs)
+        assertEquals("Bir sonraki cümle burada", sentences[1].text)
+        assertEquals(3500L, sentences[1].startMs)
+        assertEquals(4800L, sentences[1].endMs)
+    }
+
+    @Test
+    fun `groupWordsToSentences produces non-overlapping timestamps`() {
+        val words = listOf(
+            SubtitleBlock(1, 0, 1000, "", "hello"),
+            SubtitleBlock(2, 500, 1500, "", "world"),
+            SubtitleBlock(3, 1000, 2000, "", "how"),
+            SubtitleBlock(4, 1200, 2200, "", "are you"),
+        )
+
+        val sentences = SubtitleParser.groupWordsToSentences(words)
+
+        // All 4 words are close in time, should group into 1 sentence
+        assertEquals(1, sentences.size)
+        assertEquals("hello world how are you", sentences[0].text)
+        assertEquals(0L, sentences[0].startMs)
+        assertEquals(2200L, sentences[0].endMs)
+    }
+
+    @Test
+    fun `groupWordsToSentences splits on large time gaps`() {
+        val words = listOf(
+            SubtitleBlock(1, 0, 1000, "", "first"),
+            SubtitleBlock(2, 10000, 11000, "", "second"),
+        )
+
+        val sentences = SubtitleParser.groupWordsToSentences(words)
+        assertEquals(2, sentences.size)
+        assertEquals("first", sentences[0].text)
+        assertEquals("second", sentences[1].text)
+    }
+
+    // ── consolidateDuplicateText ──────────────────────────────────────────
+
+    @Test
+    fun `consolidateDuplicateText merges consecutive duplicate text`() {
+        val blocks = listOf(
+            SubtitleBlock(1, 0, 1000, "", "hello"),
+            SubtitleBlock(2, 500, 1500, "", "hello"),
+            SubtitleBlock(3, 1000, 2000, "", "world"),
+        )
+
+        val result = SubtitleParser.consolidateDuplicateText(blocks)
+        assertEquals(2, result.size)
+        assertEquals("hello", result[0].text)
+        assertEquals(1500L, result[0].endMs) // Extended to cover duplicate
+        assertEquals("world", result[1].text)
+    }
+
+    @Test
+    fun `consolidateDuplicateText preserves non-duplicate blocks`() {
+        val blocks = listOf(
+            SubtitleBlock(1, 0, 1000, "", "hello"),
+            SubtitleBlock(2, 1000, 2000, "", "world"),
+        )
+
+        val result = SubtitleParser.consolidateDuplicateText(blocks)
+        assertEquals(2, result.size)
+    }
+
+    // ── End-to-end: word-level -> sentence -> translate -> map back ───────
+
+    @Test
+    fun `word-level to sentence roundtrip preserves all original blocks`() {
+        // Simulate YouTube word-level auto-captions
+        val originalWords = listOf(
+            SubtitleBlock(1, 100, 1427, "", "Naber"),
+            SubtitleBlock(2, 447, 2245, "", "mühendisler"),
+            SubtitleBlock(3, 1245, 3062, "", "? Ben Indie"),
+            SubtitleBlock(4, 2082, 3717, "", "Dev Dan"),
+            SubtitleBlock(5, 2732, 4307, "", "En iyi"),
+            SubtitleBlock(6, 3322, 4838, "", "mühendislerin sebebi"),
+        )
+
+        // Step 1: Group into sentences (what we send to Gemini)
+        val sentences = SubtitleParser.groupWordsToSentences(originalWords)
+        assertTrue("Sentences should have fewer blocks than words", sentences.size < originalWords.size)
+        assertTrue("Sentences should have non-overlapping timestamps",
+            sentences.zipWithNext().all { (a, b) -> a.endMs <= b.startMs })
+
+        // Step 2: Simulate Gemini translation (1:1 mapping since clean SRT)
+        val translatedSentences = sentences.mapIndexed { idx, sent ->
+            sent.copy(text = "translated_${idx + 1}: ${sent.text}")
+        }
+
+        // Step 3: Map back to original word-level blocks (like matchTranslatedBlocks does)
+        val mappedBack = originalWords.map { word ->
+            val sentenceIdx = sentences.indexOfFirst { sent ->
+                word.startMs >= sent.startMs && word.startMs < sent.endMs
+            }
+            val transText = if (sentenceIdx >= 0 && sentenceIdx < translatedSentences.size) {
+                translatedSentences[sentenceIdx].text
+            } else {
+                word.text
+            }
+            word.copy(text = transText)
+        }
+
+        // All original blocks preserved
+        assertEquals(originalWords.size, mappedBack.size)
+        // All original timestamps preserved
+        assertEquals(originalWords.map { it.startMs }, mappedBack.map { it.startMs })
+        assertEquals(originalWords.map { it.endMs }, mappedBack.map { it.endMs })
+        // Words in same sentence get same translation
+        assertEquals("translated_1: Naber", mappedBack[0].text)
+        assertEquals("translated_1: mühendisler", mappedBack[1].text)
+        assertEquals("translated_1: ? Ben Indie", mappedBack[2].text)
     }
 }
